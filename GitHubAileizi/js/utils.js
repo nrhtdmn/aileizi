@@ -14,7 +14,7 @@ const dict = {
     nav_map: 'Harita',
     nav_sos: 'SOS',
     nav_messages: 'Mesaj',
-    nav_routes: 'Rota',
+    nav_routes: 'Kayıt',
     nav_geofence: 'Bölge',
     nav_settings: 'Ayar',
     logout: 'Çıkış',
@@ -53,7 +53,7 @@ const dict = {
     nav_map: 'Map',
     nav_sos: 'SOS',
     nav_messages: 'Chat',
-    nav_routes: 'Routes',
+    nav_routes: 'Saved',
     nav_geofence: 'Zones',
     nav_settings: 'More',
     logout: 'Sign out',
@@ -150,4 +150,25 @@ export function escapeHtml(s) {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+}
+
+/** Paylaş: Web Share API veya panoya kopyala */
+export async function shareText(text, title = 'Aileİzi') {
+  const body = String(text || '').trim();
+  if (!body) return;
+  try {
+    if (navigator.share) {
+      await navigator.share({ title, text: body });
+      toast('Paylaşıldı', 'success');
+      return;
+    }
+  } catch (e) {
+    if (e?.name === 'AbortError') return;
+  }
+  try {
+    await navigator.clipboard.writeText(body);
+    toast('Panoya kopyalandı', 'success');
+  } catch (_) {
+    prompt('Kopyala:', body);
+  }
 }

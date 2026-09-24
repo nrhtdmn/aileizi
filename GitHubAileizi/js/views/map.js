@@ -117,6 +117,7 @@ export function mountMap(root) {
           <p class="hint">Çocuğu canlı izle, gittiği yeri çiz. Ekran kapanmaz.</p>
           <button class="btn btn-sm btn-outline" id="btn-follow" type="button">Takibi başlat</button>
           <button class="btn btn-sm btn-outline" id="btn-clear-live" type="button">Canlı izi sil</button>
+          <button class="btn btn-sm btn-outline" id="btn-save-live" type="button">Canlı izi kaydet</button>
         </div>
         <div class="tools-section">
           <h4>İz (geçmiş)</h4>
@@ -134,6 +135,15 @@ export function mountMap(root) {
             <button class="btn btn-sm btn-outline" id="btn-history" type="button">İzi yükle</button>
             <button class="btn btn-sm btn-primary" id="btn-anim" type="button" disabled>Oynat</button>
             <button class="btn btn-sm btn-outline" id="btn-anim-stop" type="button">Durdur</button>
+            <button class="btn btn-sm btn-outline" id="btn-save-trail" type="button">İzi kaydet</button>
+          </div>
+        </div>
+        <div class="tools-section">
+          <h4>Konum</h4>
+          <p class="hint">Haritaya tıkla veya seçili çocuğun konumunu kaydet.</p>
+          <div class="row-actions">
+            <button class="btn btn-sm btn-outline" id="btn-save-place-click" type="button">Tıklanan noktayı kaydet</button>
+            <button class="btn btn-sm btn-outline" id="btn-save-place-child" type="button">Çocuk konumunu kaydet</button>
           </div>
         </div>
         <div class="tools-section">
@@ -145,7 +155,7 @@ export function mountMap(root) {
             <button class="btn btn-sm btn-outline" id="btn-clear-draft" type="button">Temizle</button>
             <button class="btn btn-sm btn-primary" id="btn-save-route" type="button" disabled>Kaydet</button>
           </div>
-          <p class="hint">Kayıtlı rotaları yönetmek için alt menüden <b>Rota</b>.</p>
+          <p class="hint">Tüm kayıtları yönetmek için alt menüden <b>Kayıt</b>.</p>
         </div>
       </div>
       <div class="map-status chrome-el" id="map-status">Konumlar yükleniyor…</div>
@@ -339,12 +349,16 @@ export function mountMap(root) {
   };
   root.querySelector('#btn-follow').onclick = () => toggleFollow();
   root.querySelector('#btn-clear-live').onclick = () => clearLiveTrail();
+  root.querySelector('#btn-save-live').onclick = () => saveTrailFromLive();
   root.querySelector('#history-hours').onchange = (e) => {
     historyHours = Number(e.target.value) || 24;
   };
   root.querySelector('#btn-history').onclick = () => loadHistory();
   root.querySelector('#btn-anim').onclick = () => playHistoryAnim();
   root.querySelector('#btn-anim-stop').onclick = () => stopHistoryAnim();
+  root.querySelector('#btn-save-trail').onclick = () => saveTrailFromHistory();
+  root.querySelector('#btn-save-place-click').onclick = () => savePlaceFromClick();
+  root.querySelector('#btn-save-place-child').onclick = () => savePlaceFromChild();
   root.querySelector('#btn-draw').onclick = (e) => {
     drawMode = !drawMode;
     draftPoints = [];
@@ -798,7 +812,7 @@ async function saveRoute() {
       recording: false,
       createdAt: serverTimestamp(),
     });
-    toast('Rota kaydedildi', 'success');
+    toast('Rota kaydedildi — Kayıt sekmesinden yönet', 'success');
     draftPoints = [];
     if (draftPolyline) {
       map.removeLayer(draftPolyline);
@@ -808,6 +822,111 @@ async function saveRoute() {
   } catch (e) {
     toast(e.message || 'Kayıt başarısız', 'error');
   }
+}
+
+async function saveTrailDoc({ name, points, source, hours }) {
+  const fid = familyId();
+  if (!fid || !selectedChildId) {
+    toast('Önce üstten bir çocuk seç', 'error');
+    return;
+  }
+  if (!points || points.length < 2) {
+    toast('Kaydedilecek yeterli nokta yok', 'error');
+    return;
+  }
+  try {
+    await ensureParentProfile(auth.currentUser);
+    await addDoc(collection(db, 'families', fid, 'trails'), {
+      name,
+      childId: selectedChildId,
+      points: points.map((p) =>
+        Array.isArray(p)
+          ? { latitude: p[0], longitude: p[1] }
+          : { latitude: p.latitude, longitude: p.longitude },
+      ),
+      source,
+      hours: hours || null,
+      createdAt: serverTimestamp(),
+    });
+    toast('İz kaydedildi — Kayıt sekmesi', 'success');
+  } catch (e) {
+    toast(e.message || 'İz kaydı başarısız', 'error');
+  }
+}
+
+async function saveTrailFromHistory() {
+  if (historyAnimPts.length < 2) {
+    toast('Önce izi yükle', 'error');
+    return;
+  }
+  const name = prompt('İz adı', `İz ${historyHours}s`)?.trim();
+  if (!name) return;
+  await saveTrailDoc({
+    name,
+    points: historyAnimPts,
+    source: 'history',
+    hours: historyHours,
+  });
+}
+
+async function saveTrailFromLive() {
+  if (liveTrailPoints.length < 2) {
+    toast('Önce takibi başlatıp biraz iz çiz', 'error');
+    return;
+  }
+  const name = prompt('İz adı', 'Canlı iz')?.trim();
+  if (!name) return;
+  await saveTrailDoc({
+    name,
+    points: liveTrailPoints,
+    source: 'live',
+  });
+}
+
+async function savePlaceAt(lat, lng, defaultName) {
+  const fid = familyId();
+  if (!fid) return;
+  const name = prompt('Konum adı', defaultName || 'Konum')?.trim();
+  if (!name) return;
+  const note = prompt('Not (isteğe bağlı)', '')?.trim() || '';
+  try {
+    await ensureParentProfile(auth.currentUser);
+    await addDoc(collection(db, 'families', fid, 'places'), {
+      name,
+      latitude: lat,
+      longitude: lng,
+      note,
+      childId: selectedChildId || null,
+      createdAt: serverTimestamp(),
+    });
+    toast('Konum kaydedildi — Kayıt sekmesi', 'success');
+  } catch (e) {
+    toast(e.message || 'Konum kaydı başarısız', 'error');
+  }
+}
+
+async function savePlaceFromClick() {
+  if (!pendingFence) {
+    toast('Önce haritaya tıkla', 'error');
+    return;
+  }
+  await savePlaceAt(pendingFence.lat, pendingFence.lng, 'Konum');
+}
+
+async function savePlaceFromChild() {
+  if (!selectedChildId) {
+    toast('Önce üstten bir çocuk seç', 'error');
+    return;
+  }
+  const m = locByChild.get(selectedChildId);
+  const lat = asNum(m?.latitude);
+  const lng = asNum(m?.longitude);
+  if (lat == null || lng == null) {
+    toast('Çocuk konumu yok', 'error');
+    return;
+  }
+  const child = children.find((c) => c.uid === selectedChildId);
+  await savePlaceAt(lat, lng, child?.name || 'Konum');
 }
 
 export function unmountMap() {

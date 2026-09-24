@@ -205,6 +205,18 @@ service cloud.firestore {
         allow write: if isParentOf(familyId, request.auth.uid);
       }
 
+      match /places/{placeId} {
+        allow read: if isParentOf(familyId, request.auth.uid)
+          || isMemberOf(familyId, request.auth.uid);
+        allow write: if isParentOf(familyId, request.auth.uid);
+      }
+
+      match /trails/{trailId} {
+        allow read: if isParentOf(familyId, request.auth.uid)
+          || isMemberOf(familyId, request.auth.uid);
+        allow write: if isParentOf(familyId, request.auth.uid);
+      }
+
       match /geofence_events/{eventId} {
         allow read: if isParentOf(familyId, request.auth.uid);
         allow create: if isSignedIn()

@@ -16,7 +16,7 @@ import { t, setLang, toast } from './utils.js';
 import { mountMap, unmountMap, focusMapOn } from './views/map.js';
 import { mountSos, unmountSos } from './views/sos.js';
 import { mountMessages, unmountMessages } from './views/messages.js';
-import { mountRoutes, unmountRoutes } from './views/routes.js';
+import { mountRecords, unmountRecords } from './views/records.js';
 import { mountGeofence, unmountGeofence } from './views/geofence.js';
 import { mountSettings, unmountSettings } from './views/settings.js';
 import {
@@ -38,7 +38,7 @@ const NAV = [
   { id: 'map', label: 'nav_map', ico: '🗺️' },
   { id: 'sos', label: 'nav_sos', ico: '🆘' },
   { id: 'messages', label: 'nav_messages', ico: '💬' },
-  { id: 'routes', label: 'nav_routes', ico: '🛣️' },
+  { id: 'records', label: 'nav_routes', ico: '📂' },
   { id: 'geofence', label: 'nav_geofence', ico: '📍' },
   { id: 'settings', label: 'nav_settings', ico: '⚙️' },
 ];
@@ -117,7 +117,7 @@ function cleanup() {
   unmountMap();
   unmountSos();
   unmountMessages();
-  unmountRoutes();
+  unmountRecords();
   unmountGeofence();
   unmountSettings();
   unmountChild();
@@ -341,7 +341,7 @@ function showTab(i) {
   unmountMap();
   unmountSos();
   unmountMessages();
-  unmountRoutes();
+  unmountRecords();
   unmountGeofence();
   unmountSettings();
 
@@ -370,8 +370,8 @@ function showTab(i) {
       unmountCurrent = unmountMessages;
       break;
     case 3:
-      mountRoutes(root);
-      unmountCurrent = unmountRoutes;
+      mountRecords(root);
+      unmountCurrent = unmountRecords;
       break;
     case 4:
       mountGeofence(root);

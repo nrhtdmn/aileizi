@@ -1018,6 +1018,57 @@ a {
   background: var(--green-soft);
 }
 
+.records-intro {
+  margin: -4px 0 12px;
+}
+
+.records-tabs {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.records-tabs button {
+  border: 1px solid var(--line);
+  background: #fff;
+  border-radius: 12px;
+  padding: 8px 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  font-size: 0.68rem;
+  font-weight: 750;
+  color: var(--muted);
+}
+
+.records-tabs button .ico {
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+.records-tabs button.active {
+  border-color: var(--green-2);
+  background: var(--green-soft);
+  color: var(--green);
+}
+
+.records-toolbar {
+  margin-bottom: 10px;
+}
+
+.records-toolbar .hint,
+.records-toolbar .hint {
+  margin: 6px 0 0;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.records-view .row-actions {
+  flex-wrap: wrap;
+}
+
 .settings-menu {
   display: flex;
   flex-direction: column;

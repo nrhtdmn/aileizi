@@ -106,7 +106,8 @@ export function mountSettings(root) {
         <ul class="tips">
           <li>Çocuk uygulamasını arka planda açık tut — konum ve SOS için.</li>
           <li>Harita’da noktaya tıkla → «+ Bölge» ile güvenli alan ekle.</li>
-          <li>Okul yolu için rota çiz; sapma eşiğini Rotalar’dan ayarla.</li>
+          <li>Rota, iz ve konumları <b>Kayıt</b> sekmesinden düzenle, sil veya paylaş.</li>
+          <li>Okul yolu için rota çiz; sapma eşiğini Kayıt → Rotalar’dan ayarla.</li>
           <li>Bu sekmeyi açık bırakırsan bildirimler anında gelir.</li>
         </ul>
       </div>
