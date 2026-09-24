@@ -12,7 +12,7 @@ import {
   describeError,
 } from './firebase-app.js';
 import { Brand } from './config.js';
-import { t, setLang, getLang, toast } from './utils.js';
+import { t, setLang, toast } from './utils.js';
 import { mountMap, unmountMap, focusMapOn } from './views/map.js';
 import { mountSos, unmountSos } from './views/sos.js';
 import { mountMessages, unmountMessages } from './views/messages.js';
@@ -35,15 +35,15 @@ let deferredPrompt = null;
 let chromeHidden = false;
 
 const NAV = [
-  { id: 'map', label: 'nav_map', ico: 'H' },
-  { id: 'sos', label: 'nav_sos', ico: 'S' },
-  { id: 'messages', label: 'nav_messages', ico: 'M' },
-  { id: 'routes', label: 'nav_routes', ico: 'R' },
-  { id: 'geofence', label: 'nav_geofence', ico: 'B' },
-  { id: 'settings', label: 'nav_settings', ico: 'A' },
+  { id: 'map', label: 'nav_map', ico: '🗺️' },
+  { id: 'sos', label: 'nav_sos', ico: '🆘' },
+  { id: 'messages', label: 'nav_messages', ico: '💬' },
+  { id: 'routes', label: 'nav_routes', ico: '🛣️' },
+  { id: 'geofence', label: 'nav_geofence', ico: '📍' },
+  { id: 'settings', label: 'nav_settings', ico: '⚙️' },
 ];
 
-setLang(getLang());
+setLang('tr');
 
 window.addEventListener('beforeinstallprompt', (e) => {
   e.preventDefault();
@@ -134,10 +134,6 @@ function renderParentAuth() {
           <h1>${Brand.name}</h1>
           <p>${t('parent')}</p>
         </div>
-        <div class="lang-row">
-          <button type="button" class="chip ${getLang() === 'tr' ? 'active' : ''}" data-lang="tr">TR</button>
-          <button type="button" class="chip ${getLang() === 'en' ? 'active' : ''}" data-lang="en">EN</button>
-        </div>
         <div class="tabs">
           <button type="button" class="active" data-tab="login">${t('login')}</button>
           <button type="button" data-tab="register">${t('register')}</button>
@@ -172,13 +168,6 @@ function renderParentAuth() {
     e.textContent = m;
     e.classList.toggle('hidden', !m);
   };
-
-  app.querySelectorAll('[data-lang]').forEach((b) => {
-    b.onclick = () => {
-      setLang(b.dataset.lang);
-      renderParentAuth();
-    };
-  });
 
   app.querySelectorAll('.tabs button').forEach((b) => {
     b.onclick = () => {
@@ -260,7 +249,7 @@ function renderParentShell() {
             <option value="">Tüm çocuklar</option>
           </select>
         </div>
-        <button type="button" class="btn btn-sm btn-outline" id="btn-chrome-hide" title="Sadece harita">Gizle</button>
+        <button type="button" class="btn btn-sm btn-outline hidden" id="btn-chrome-hide" title="Sadece harita">Gizle</button>
       </header>
       <main id="view-root"></main>
       <nav class="bottom-nav" id="bottom-nav">
@@ -309,7 +298,10 @@ function renderParentShell() {
     app.querySelectorAll('#bottom-nav button').forEach((b) =>
       b.classList.toggle('active', b === btn),
     );
-    // Leaving map focus optional — keep chrome state user chose
+    if (currentTab !== 0 && chromeHidden) {
+      chromeHidden = false;
+      applyChrome();
+    }
     showTab(currentTab);
     syncTopChildVisibility();
   };
@@ -329,9 +321,11 @@ function renderParentShell() {
 
 function syncTopChildVisibility() {
   const sel = document.getElementById('top-child');
-  if (!sel) return;
-  const mapTabs = currentTab === 0 || currentTab === 4;
-  sel.classList.toggle('hidden', !mapTabs);
+  const hideBtn = document.getElementById('btn-chrome-hide');
+  const mapTab = currentTab === 0;
+  const mapLike = currentTab === 0 || currentTab === 4;
+  if (sel) sel.classList.toggle('hidden', !mapLike);
+  if (hideBtn) hideBtn.classList.toggle('hidden', !mapTab);
 }
 
 function escape(s) {

@@ -22,7 +22,7 @@ import {
   describeError,
   tsToDate,
 } from '../firebase-app.js';
-import { t, setLang, getLang, fmtTime, toast, escapeHtml } from '../utils.js';
+import { t, fmtTime, toast, escapeHtml } from '../utils.js';
 import { getAlertPrefs, setAlertPrefs } from '../alerts.js';
 
 let unsubs = [];
@@ -36,17 +36,10 @@ export function mountSettings(root) {
     <div class="view">
       <div class="panel-title"><h2>${t('nav_settings')}</h2></div>
 
-      <div class="row section">
-        <h3>${escapeHtml(user?.displayName || 'Ebeveyn')}</h3>
-        <div class="meta">${escapeHtml(user?.email || '')}</div>
-        <div class="row-actions">
-          <button class="btn btn-sm btn-outline" id="lang-tr" type="button">TR</button>
-          <button class="btn btn-sm btn-outline" id="lang-en" type="button">EN</button>
-          <button class="btn btn-sm btn-outline" id="btn-logout" type="button">${t('logout')}</button>
-        </div>
-      </div>
-
       <div class="settings-menu">
+        <button type="button" class="menu-item" data-panel="account">
+          <span>Hesap</span><span class="chev">›</span>
+        </button>
         <button type="button" class="menu-item" data-panel="notify">
           <span>Anlık bildirimler</span><span class="chev">›</span>
         </button>
@@ -62,6 +55,18 @@ export function mountSettings(root) {
         <button type="button" class="menu-item" id="btn-open-pw">
           <span>Şifre değiştir</span><span class="chev">›</span>
         </button>
+      </div>
+
+      <div class="settings-panel hidden" id="panel-account">
+        <button type="button" class="link-back" data-back>← Geri</button>
+        <h3>Hesap</h3>
+        <div class="row" style="margin-top:8px">
+          <h3>${escapeHtml(user?.displayName || 'Ebeveyn')}</h3>
+          <div class="meta">${escapeHtml(user?.email || '')}</div>
+          <div class="row-actions">
+            <button class="btn btn-sm btn-outline" id="btn-logout" type="button">${t('logout')}</button>
+          </div>
+        </div>
       </div>
 
       <div class="settings-panel hidden" id="panel-notify">
@@ -174,14 +179,6 @@ export function mountSettings(root) {
     modal.classList.add('hidden');
   };
 
-  root.querySelector('#lang-tr').onclick = () => {
-    setLang('tr');
-    location.reload();
-  };
-  root.querySelector('#lang-en').onclick = () => {
-    setLang('en');
-    location.reload();
-  };
   root.querySelector('#btn-logout').onclick = async () => {
     await signOut(auth);
   };
@@ -276,8 +273,6 @@ export function mountSettings(root) {
     },
   );
   unsubs.push(u2);
-
-  document.getElementById(getLang() === 'en' ? 'lang-en' : 'lang-tr')?.classList.add('btn-primary');
 }
 
 async function renderHealth(fid, list) {

@@ -13,7 +13,7 @@ Flutter uygulamalarını **bozmadan** eklenen web sürümü. Aynı Firebase proj
 - Ekran kullanım istatistikleri + 7 günlük grafik
 - Güvenli bölgeler (geofence) + olaylar
 - Davet kodu, çocuk yönetimi, dijital ebeveynlik politikası, şifre değiştirme
-- TR / EN dil
+- Türkçe arayüz
 
 ### Çocuk (web)
 - Davet koduyla katılım (anonim Auth)

@@ -623,14 +623,15 @@ a {
 }
 
 .bottom-nav button .ico {
-  width: 22px;
-  height: 22px;
+  width: 28px;
+  height: 28px;
   display: grid;
   place-items: center;
-  font-size: 1rem;
+  font-size: 1.15rem;
   line-height: 1;
-  font-weight: 800;
-  border-radius: 7px;
+  font-weight: 400;
+  border-radius: 10px;
+  background: transparent;
 }
 
 .bottom-nav button.active {
@@ -639,6 +640,12 @@ a {
 
 .bottom-nav button.active .ico {
   background: var(--green-soft);
+  transform: scale(1.05);
+}
+
+.bottom-nav button span:last-child {
+  font-size: 0.62rem;
+  letter-spacing: 0.01em;
 }
 
 .panel-title {
@@ -975,16 +982,20 @@ a {
 }
 
 .map-zoom-fab {
-  position: absolute;
+  position: fixed;
   right: 12px;
-  bottom: 16px;
+  bottom: calc(var(--nav-h) + 14px + env(safe-area-inset-bottom));
   z-index: 500;
   display: flex;
   flex-direction: column;
-  border-radius: 12px;
+  border-radius: 14px;
   overflow: hidden;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
   background: #fff;
+}
+
+.app-shell.chrome-hidden .map-zoom-fab {
+  bottom: 16px;
 }
 
 .map-zoom-fab button {

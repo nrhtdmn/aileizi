@@ -196,11 +196,11 @@ export function mountChildHome(root, session) {
 
       <nav class="bottom-nav child-nav" id="child-nav">
         <button type="button" data-tab="home" class="active">
-          <span class="ico">A</span>
+          <span class="ico">🏠</span>
           <span>Ana</span>
         </button>
         <button type="button" data-tab="chat">
-          <span class="ico">M</span>
+          <span class="ico">💬</span>
           <span>Mesaj</span>
         </button>
       </nav>
