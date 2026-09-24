@@ -91,7 +91,7 @@ export function mountGeofence(root) {
         <div class="map-actions">
           <button class="btn btn-sm btn-outline" id="geo-map-type" type="button">Hibrit</button>
           <button class="btn btn-sm btn-outline" id="geo-center" type="button">Ortala</button>
-          <button class="btn btn-sm btn-primary" id="geo-add" type="button">+ Bölge</button>
+          <button class="btn btn-sm btn-primary map-icon-btn" id="geo-add" type="button" title="Güvenli bölge ekle" aria-label="Güvenli bölge ekle">🛡️+</button>
         </div>
       </div>
       <div class="map-status chrome-el" id="geo-status">Ortadaki + hedefi kaydır → + Bölge</div>

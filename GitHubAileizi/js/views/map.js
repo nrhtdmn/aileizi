@@ -137,7 +137,7 @@ export function mountMap(root) {
           <button class="btn btn-sm btn-outline" id="btn-center" type="button">Ortala</button>
           <button class="btn btn-sm btn-outline" id="btn-toggle-fences" type="button">Bölgeler</button>
           <button class="btn btn-sm btn-outline" id="btn-tools" type="button">Araçlar</button>
-          <button class="btn btn-sm btn-primary" id="btn-add-fence" type="button">+ Bölge</button>
+          <button class="btn btn-sm btn-primary map-icon-btn" id="btn-add-fence" type="button" title="Güvenli bölge ekle" aria-label="Güvenli bölge ekle">🛡️+</button>
         </div>
       </div>
       <div class="tools-panel chrome-el" id="tools-panel">
