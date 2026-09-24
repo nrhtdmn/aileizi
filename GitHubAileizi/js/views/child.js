@@ -157,6 +157,7 @@ export async function resolveChildSession() {
 
 export function mountChildHome(root, session) {
   let sharing = session.sharing;
+
   root.innerHTML = `
     <div class="app-shell child">
       <header class="topbar">
@@ -164,36 +165,65 @@ export function mountChildHome(root, session) {
           <h2>${Brand.name}</h2>
           <div class="sub">Merhaba, ${escapeHtml(session.name)}</div>
         </div>
-        <button class="btn btn-sm btn-outline" id="child-chat-btn" style="background:rgba(255,255,255,.15);color:#fff;border-color:transparent">Mesajlar</button>
       </header>
-      <div class="view" id="child-main">
+
+      <div class="view child-home-view" id="child-tab-home">
         <div class="row section">
           <div class="meta" id="child-status">${t('loading')}</div>
           <div class="row-actions">
-            <button class="btn btn-sm btn-outline" id="toggle-share">${sharing ? t('sharing_on') : t('sharing_off')}</button>
-            <button class="btn btn-sm btn-outline" id="refresh-loc">Yenile</button>
+            <button class="btn btn-sm btn-outline" id="toggle-share" type="button">${sharing ? t('sharing_on') : t('sharing_off')}</button>
+            <button class="btn btn-sm btn-outline" id="refresh-loc" type="button">Yenile</button>
           </div>
         </div>
         <div class="sos-wrap">
-          <button class="sos-btn" id="sos-btn">SOS</button>
+          <button class="sos-btn" id="sos-btn" type="button">SOS</button>
           <p class="meta" style="margin-top:14px">${t('sos_hold')}</p>
         </div>
-        <div id="child-chat-panel" class="hidden" style="margin-top:12px">
-          <div class="chat-pane">
-            <div class="chat-msgs" id="child-msgs"></div>
-            <div class="chat-compose">
-              <input type="file" id="child-file" accept="image/*" hidden />
-              <button class="btn btn-sm btn-outline" id="child-img" type="button">Foto</button>
-              <input id="child-input" type="text" placeholder="Mesaj…" />
-              <button class="btn btn-sm btn-primary" id="child-send" type="button">${t('send')}</button>
-            </div>
+      </div>
+
+      <div class="view child-chat-view hidden" id="child-tab-chat">
+        <div class="panel-title"><h2>Mesajlar</h2></div>
+        <div class="chat-pane child-chat-full">
+          <div class="chat-msgs" id="child-msgs"><div class="empty">Henüz mesaj yok</div></div>
+          <div class="chat-compose">
+            <input type="file" id="child-file" accept="image/*" hidden />
+            <button class="btn btn-sm btn-outline" id="child-img" type="button">Foto</button>
+            <input id="child-input" type="text" placeholder="Mesaj yaz…" autocomplete="off" />
+            <button class="btn btn-sm btn-primary" id="child-send" type="button">${t('send')}</button>
           </div>
         </div>
       </div>
+
+      <nav class="bottom-nav child-nav" id="child-nav">
+        <button type="button" data-tab="home" class="active">
+          <span class="ico">A</span>
+          <span>Ana</span>
+        </button>
+        <button type="button" data-tab="chat">
+          <span class="ico">M</span>
+          <span>Mesaj</span>
+        </button>
+      </nav>
     </div>
   `;
 
   const status = () => root.querySelector('#child-status');
+  const homeEl = root.querySelector('#child-tab-home');
+  const chatEl = root.querySelector('#child-tab-chat');
+
+  const showTab = (next) => {
+    homeEl.classList.toggle('hidden', next !== 'home');
+    chatEl.classList.toggle('hidden', next !== 'chat');
+    root.querySelectorAll('#child-nav button').forEach((b) => {
+      b.classList.toggle('active', b.dataset.tab === next);
+    });
+    if (next === 'chat') openChildChat(session);
+  };
+
+  root.querySelector('#child-nav').onclick = (e) => {
+    const btn = e.target.closest('button[data-tab]');
+    if (btn) showTab(btn.dataset.tab);
+  };
 
   startLocationWatch(session, sharing, (msg) => {
     if (status()) status().textContent = msg;
@@ -237,7 +267,6 @@ export function mountChildHome(root, session) {
       toast('Konum güncellendi', 'success'),
     );
 
-  // SOS hold 3s
   const sos = root.querySelector('#sos-btn');
   let holdTimer = null;
   let holdStart = 0;
@@ -265,11 +294,6 @@ export function mountChildHome(root, session) {
   sos.addEventListener('mouseleave', endHold);
   sos.addEventListener('touchend', endHold);
 
-  root.querySelector('#child-chat-btn').onclick = () => {
-    const panel = root.querySelector('#child-chat-panel');
-    panel.classList.toggle('hidden');
-    if (!panel.classList.contains('hidden')) openChildChat(session);
-  };
   root.querySelector('#child-send').onclick = () => sendChildText(session);
   root.querySelector('#child-input').onkeydown = (e) => {
     if (e.key === 'Enter') sendChildText(session);
@@ -466,6 +490,10 @@ function openChildChat(session) {
     );
     const box = document.getElementById('child-msgs');
     if (!box) return;
+    if (!msgs.length) {
+      box.innerHTML = `<div class="empty">Henüz mesaj yok. Aşağıdan yazabilirsin.</div>`;
+      return;
+    }
     box.innerHTML = msgs
       .slice(-100)
       .map((m) => {
@@ -473,6 +501,9 @@ function openChildChat(session) {
         let body = escapeHtml(m.text || '');
         if (m.type === 'image' && m.imageUrl) {
           body += `<img src="${escapeHtml(m.imageUrl)}" alt="" />`;
+        }
+        if (m.type === 'location' && m.latitude != null) {
+          body += `<div class="meta">Konum: ${Number(m.latitude).toFixed(5)}, ${Number(m.longitude).toFixed(5)}</div>`;
         }
         return `<div class="bubble ${role}">${body}<div class="meta" style="opacity:.7;font-size:.7rem;margin-top:4px">${fmtTime(tsToDate(m.createdAt))}</div></div>`;
       })

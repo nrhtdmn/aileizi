@@ -327,8 +327,31 @@ a {
   color: var(--green);
 }
 
-.app-shell.child .topbar h2 {
+.app-shell.child .bottom-nav {
+  grid-template-columns: 1fr 1fr;
+}
+
+.app-shell.child .bottom-nav button.active {
   color: var(--blue);
+}
+
+.app-shell.child .bottom-nav button.active .ico {
+  background: var(--blue-soft);
+  color: var(--blue);
+}
+
+.child-chat-view {
+  display: flex;
+  flex-direction: column;
+  height: calc(100dvh - var(--nav-h) - 49px - env(safe-area-inset-bottom));
+  max-width: 720px;
+  padding-bottom: 8px;
+}
+
+.child-chat-full {
+  flex: 1;
+  min-height: 0;
+  height: auto;
 }
 
 .topbar .sub {
