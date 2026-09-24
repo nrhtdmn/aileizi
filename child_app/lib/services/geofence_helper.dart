@@ -1,7 +1,9 @@
 import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// Ebeveyn uygulamasındaki mantıkla uyumlu: çocuk cihazında bölge çıkışı/girişi kaydı.
+/// Inside durumu SharedPreferences'ta tutulur — önceki Firestore doc olmasa da çalışır.
 class GeofenceHelper {
   static double distanceMeters(
     double lat1,
@@ -20,6 +22,9 @@ class GeofenceHelper {
 
   static double _rad(double d) => d * pi / 180;
 
+  static String _stateKey(String familyId, String childId, String fenceId) =>
+      'geo_inside_${familyId}_${childId}_$fenceId';
+
   static Future<void> evaluateAndRecord({
     required FirebaseFirestore db,
     required String familyId,
@@ -27,14 +32,25 @@ class GeofenceHelper {
     required String childName,
     required double lat,
     required double lng,
-    required Map<String, dynamic>? previousLocationDoc,
+    Map<String, dynamic>? previousLocationDoc,
+    double? previousLat,
+    double? previousLng,
   }) async {
-    if (previousLocationDoc == null) return;
+    double? plat = previousLat;
+    double? plng = previousLng;
+    if (plat == null || plng == null) {
+      plat = (previousLocationDoc?['latitude'] as num?)?.toDouble();
+      plng = (previousLocationDoc?['longitude'] as num?)?.toDouble();
+    }
+    if (plat != null &&
+        plng != null &&
+        plat.abs() < 0.00001 &&
+        plng.abs() < 0.00001) {
+      plat = null;
+      plng = null;
+    }
 
-    final plat = (previousLocationDoc['latitude'] ?? 0).toDouble();
-    final plng = (previousLocationDoc['longitude'] ?? 0).toDouble();
-    if (plat.abs() < 0.00001 && plng.abs() < 0.00001) return;
-
+    final prefs = await SharedPreferences.getInstance();
     final fencesSnap = await db
         .collection('families')
         .doc(familyId)
@@ -53,22 +69,37 @@ class GeofenceHelper {
       final notifyExit = m['notifyOnExit'] != false;
       final notifyEnter = m['notifyOnEnter'] != false;
 
-      final distPrev = distanceMeters(plat, plng, centerLat, centerLng);
-      final distNow = distanceMeters(lat, lng, centerLat, centerLng);
-
-      // Histerezis tamponu (GPS salınımı)
       final buffer = min(25.0, max(10.0, radius * 0.08));
-      final wasInside = distPrev <= radius;
-      final exited = wasInside && distNow > (radius + buffer);
-      final entered = !wasInside && distNow < (radius - buffer);
+      final distNow = distanceMeters(lat, lng, centerLat, centerLng);
+      final isInside = distNow <= radius;
+      final key = _stateKey(familyId, childId, doc.id);
+
+      bool? wasInside;
+      if (prefs.containsKey(key)) {
+        wasInside = prefs.getBool(key);
+      } else if (plat != null && plng != null) {
+        wasInside = distanceMeters(plat, plng, centerLat, centerLng) <= radius;
+      } else {
+        // İlk ölçüm: olay üretme, sadece durumu kaydet
+        await prefs.setBool(key, isInside);
+        continue;
+      }
+
+      final exited = wasInside == true && distNow > (radius + buffer);
+      final entered = wasInside == false && distNow < (radius - buffer);
 
       if (exited && notifyExit) {
         await _addEvent(
             db, familyId, childId, childName, name, 'exit', lat, lng);
-      }
-      if (entered && notifyEnter) {
+        await prefs.setBool(key, false);
+      } else if (entered && notifyEnter) {
         await _addEvent(
             db, familyId, childId, childName, name, 'enter', lat, lng);
+        await prefs.setBool(key, true);
+      } else if (distNow <= radius - buffer || distNow >= radius + buffer) {
+        await prefs.setBool(key, isInside);
+      } else if (wasInside != null) {
+        await prefs.setBool(key, wasInside);
       }
     }
   }

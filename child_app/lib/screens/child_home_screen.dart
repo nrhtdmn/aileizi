@@ -201,6 +201,18 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
   Future<void> _startLocationSharing() async {
     if (!_isSharing) return;
     await LocationUploadService.ensurePermission();
+    final perm = await Geolocator.checkPermission();
+    if (perm == LocationPermission.whileInUse && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Ekran kapalıyken konum için izni «Her zaman izin ver» yapın. '
+            'Ayarlar → Konum → Aileİzi Çocuk.',
+          ),
+          duration: Duration(seconds: 6),
+        ),
+      );
+    }
     await startLocationBackgroundService();
     await _pushLocationNow();
     _locationTimer?.cancel();

@@ -35,10 +35,12 @@ class LocationUploadService {
         permission == LocationPermission.deniedForever) {
       return false;
     }
+    // whileInUse → Always (ekran kapalı / arka plan için gerekli)
     if (permission == LocationPermission.whileInUse) {
-      await Geolocator.requestPermission();
+      permission = await Geolocator.requestPermission();
     }
-    return true;
+    return permission == LocationPermission.whileInUse ||
+        permission == LocationPermission.always;
   }
 
   static const _locationSettings = LocationSettings(
@@ -193,21 +195,21 @@ class LocationUploadService {
       battery = await Battery().batteryLevel;
     } catch (_) {}
 
-    // Önceki doc: sadece geofence için ve nadiren oku
-    Map<String, dynamic>? previousData;
-    if (significantMove || ageSec >= 60) {
-      try {
-        final prevSnap = await db
-            .collection('families')
-            .doc(resolvedFamilyId)
-            .collection('locations')
-            .doc(user.uid)
-            .get();
-        previousData = prevSnap.data();
-      } catch (_) {
-        previousData = null;
-      }
-    }
+    // Geofence: prefs'teki son konum her zaman yeter (Firestore okumaya gerek yok)
+    final childName = prefs.getString('cached_child_name') ?? 'Çocuk';
+
+    try {
+      await GeofenceHelper.evaluateAndRecord(
+        db: db,
+        familyId: resolvedFamilyId,
+        childId: user.uid,
+        childName: childName,
+        lat: position.latitude,
+        lng: position.longitude,
+        previousLat: prevLat,
+        previousLng: prevLng,
+      );
+    } catch (_) {}
 
     final data = {
       'childId': user.uid,
@@ -222,20 +224,6 @@ class LocationUploadService {
       'isOnline': true,
       'hasLocation': true,
     };
-
-    final childName = prefs.getString('cached_child_name') ?? 'Çocuk';
-
-    try {
-      await GeofenceHelper.evaluateAndRecord(
-        db: db,
-        familyId: resolvedFamilyId,
-        childId: user.uid,
-        childName: childName,
-        lat: position.latitude,
-        lng: position.longitude,
-        previousLocationDoc: previousData,
-      );
-    } catch (_) {}
 
     await db
         .collection('families')

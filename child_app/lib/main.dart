@@ -40,7 +40,10 @@ Future<void> _requestPermissions() async {
       permission == LocationPermission.deniedForever) {
     return;
   }
-  await Geolocator.requestPermission();
+  // whileInUse → Always (ekran kapalı konum için)
+  if (permission == LocationPermission.whileInUse) {
+    await Geolocator.requestPermission();
+  }
 }
 
 class ChildApp extends StatefulWidget {

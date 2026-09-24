@@ -59,6 +59,8 @@ let animMarker = null;
 let historyHours = 24;
 /** @type {Array<[number, number]>} */
 let historyAnimPts = [];
+/** Playback multiplier: 0.25 … 4 */
+let playbackSpeed = Number(localStorage.getItem('aileizi_playback_speed')) || 1;
 /** @type {Map<string, object>} */
 const locByChild = new Map();
 let highlightLayer = null;
@@ -146,10 +148,9 @@ export function mountMap(root) {
       <div class="tools-panel chrome-el" id="tools-panel">
         <div class="tools-section">
           <h4>Takip</h4>
-          <p class="hint">Çocuğu canlı izle, gittiği yeri çiz. Ekran kapanmaz.</p>
+          <p class="hint">Çocuğu canlı izle. Durdurunca iz otomatik kaydolur. Ekran kapanmaz.</p>
           <button class="btn btn-sm btn-outline" id="btn-follow" type="button">Takibi başlat</button>
           <button class="btn btn-sm btn-outline" id="btn-clear-live" type="button">Canlı izi sil</button>
-          <button class="btn btn-sm btn-outline" id="btn-save-live" type="button">Canlı izi kaydet</button>
         </div>
         <div class="tools-section">
           <h4>İz (geçmiş)</h4>
@@ -162,6 +163,14 @@ export function mountMap(root) {
             <option value="24" selected>Son 24 saat</option>
             <option value="48">Son 2 gün</option>
             <option value="168">Son 7 gün</option>
+          </select>
+          <label class="hint" for="playback-speed" style="display:block;margin-bottom:4px">Oynatma hızı</label>
+          <select id="playback-speed" aria-label="Oynatma hızı">
+            <option value="0.25">Çok yavaş (0.25×)</option>
+            <option value="0.5">Yavaş (0.5×)</option>
+            <option value="1" selected>Normal (1×)</option>
+            <option value="2">Hızlı (2×)</option>
+            <option value="4">Çok hızlı (4×)</option>
           </select>
           <div class="row-actions">
             <button class="btn btn-sm btn-outline" id="btn-history" type="button">İzi yükle</button>
@@ -430,10 +439,19 @@ export function mountMap(root) {
   };
   root.querySelector('#btn-follow').onclick = () => toggleFollow();
   root.querySelector('#btn-clear-live').onclick = () => clearLiveTrail();
-  root.querySelector('#btn-save-live').onclick = () => saveTrailFromLive();
   root.querySelector('#history-hours').onchange = (e) => {
     historyHours = Number(e.target.value) || 24;
   };
+  const speedSel = root.querySelector('#playback-speed');
+  if (speedSel) {
+    const opts = [...speedSel.options].map((o) => Number(o.value));
+    if (opts.includes(playbackSpeed)) speedSel.value = String(playbackSpeed);
+    speedSel.onchange = (e) => {
+      playbackSpeed = Number(e.target.value) || 1;
+      localStorage.setItem('aileizi_playback_speed', String(playbackSpeed));
+      if (animTimer) playHistoryAnim();
+    };
+  }
   root.querySelector('#btn-history').onclick = () => loadHistory();
   root.querySelector('#btn-anim').onclick = () => playHistoryAnim();
   root.querySelector('#btn-anim-stop').onclick = () => stopHistoryAnim();
@@ -466,7 +484,10 @@ export function mountMap(root) {
   root.querySelector('#btn-add-fence').onclick = () => addSafeZoneFromMap();
   const topChild = document.getElementById('top-child');
   if (topChild) {
-    topChild.onchange = (e) => {
+    topChild.onchange = async (e) => {
+      if (follow && liveTrailPoints.length >= 2) {
+        await autoSaveLiveTrail();
+      }
       selectedChildId = e.target.value || null;
       if (follow) {
         liveTrailPoints = [];
@@ -505,34 +526,52 @@ export function mountMap(root) {
   root._onResize = onResize;
 }
 
-function toggleFollow() {
+async function toggleFollow() {
   const btn = document.getElementById('btn-follow');
   if (!follow && !selectedChildId) {
     toast('Önce üstten bir çocuk seç', 'error');
     return;
   }
-  follow = !follow;
-  if (btn) {
-    btn.classList.toggle('is-on', follow);
-    btn.textContent = follow ? 'Takibi durdur' : 'Takibi başlat';
-  }
-  setKeepAwake('follow', follow);
   if (follow) {
-    liveTrailPoints = [];
-    const m = locByChild.get(selectedChildId);
-    const lat = asNum(m?.latitude);
-    const lng = asNum(m?.longitude);
-    if (lat != null && lng != null) {
-      liveTrailPoints.push([lat, lng]);
-      refreshLiveTrail();
-      map.setView([lat, lng], Math.max(map.getZoom(), 16));
+    // Bitir → otomatik kaydet
+    const pts = liveTrailPoints.slice();
+    follow = false;
+    if (btn) {
+      btn.classList.remove('is-on');
+      btn.textContent = 'Takibi başlat';
     }
-    setStatus('Takip açık · ekran kapanmaz · canlı iz çiziliyor');
-    toast('Takip başladı', 'success');
-  } else {
-    setStatus('Takip kapalı');
-    toast('Takip durdu');
+    setKeepAwake('follow', false);
+    if (pts.length >= 2) {
+      setStatus('Takip bitti · iz kaydediliyor…');
+      await autoSaveLiveTrail(pts);
+      liveTrailPoints = [];
+      refreshLiveTrail();
+      setStatus('Takip kapalı · iz kaydedildi');
+    } else {
+      liveTrailPoints = [];
+      refreshLiveTrail();
+      setStatus('Takip kapalı');
+      toast('Takip durdu — kaydedilecek iz yoktu');
+    }
+    return;
   }
+  follow = true;
+  if (btn) {
+    btn.classList.add('is-on');
+    btn.textContent = 'Takibi durdur';
+  }
+  setKeepAwake('follow', true);
+  liveTrailPoints = [];
+  const m = locByChild.get(selectedChildId);
+  const lat = asNum(m?.latitude);
+  const lng = asNum(m?.longitude);
+  if (lat != null && lng != null) {
+    liveTrailPoints.push([lat, lng]);
+    refreshLiveTrail();
+    map.setView([lat, lng], Math.max(map.getZoom(), 16));
+  }
+  setStatus('Takip açık · ekran kapanmaz · durdurunca otomatik kaydolur');
+  toast('Takip başladı', 'success');
 }
 
 function clearLiveTrail() {
@@ -843,6 +882,35 @@ function stopHistoryAnim() {
   }
 }
 
+function trailPathLengthM(pts) {
+  let d = 0;
+  for (let i = 1; i < pts.length; i++) {
+    const a = pts[i - 1];
+    const b = pts[i];
+    const R = 6371000;
+    const toR = (x) => (x * Math.PI) / 180;
+    const dLat = toR(b[0] - a[0]);
+    const dLng = toR(b[1] - a[1]);
+    const s =
+      Math.sin(dLat / 2) ** 2 +
+      Math.cos(toR(a[0])) * Math.cos(toR(b[0])) * Math.sin(dLng / 2) ** 2;
+    d += 2 * R * Math.asin(Math.sqrt(s));
+  }
+  return d;
+}
+
+/** Base ms between points at 1× — short trails stay readable. */
+function playbackStepMs(pts) {
+  const n = Math.max(1, pts.length - 1);
+  const meters = trailPathLengthM(pts);
+  // ~80 ms per metre, but at least ~8s and at most ~3 min at 1×
+  const byDist = meters * 80;
+  const byCount = n * 420;
+  const targetMs = Math.max(8000, Math.min(180000, Math.max(byDist, byCount)));
+  const spd = playbackSpeed > 0 ? playbackSpeed : 1;
+  return Math.max(50, Math.min(2000, targetMs / n / spd));
+}
+
 function playHistoryAnim() {
   stopHistoryAnim();
   if (historyAnimPts.length < 2) {
@@ -867,9 +935,10 @@ function playHistoryAnim() {
   }).addTo(map);
 
   map.setView(pts[0], Math.max(map.getZoom(), 15));
-  setStatus('İz oynatılıyor…');
+  const stepMs = playbackStepMs(pts);
+  const estSec = Math.round(((pts.length - 1) * stepMs) / 1000);
+  setStatus(`İz oynatılıyor… ${playbackSpeed}× · ~${estSec} sn`);
 
-  const stepMs = Math.max(40, Math.min(200, 12000 / pts.length));
   animTimer = setInterval(() => {
     i += 1;
     if (i >= pts.length) {
@@ -881,7 +950,7 @@ function playHistoryAnim() {
     traveled.push(pts[i]);
     pathLine.setLatLngs(traveled);
     animMarker.setLatLng(pts[i]);
-    map.panTo(pts[i], { animate: true, duration: stepMs / 1000 });
+    map.panTo(pts[i], { animate: true, duration: Math.min(0.9, stepMs / 1000) });
   }, stepMs);
 }
 
@@ -979,18 +1048,21 @@ async function saveTrailFromHistory() {
   });
 }
 
-async function saveTrailFromLive() {
-  if (liveTrailPoints.length < 2) {
-    toast('Önce takibi başlatıp biraz iz çiz', 'error');
-    return;
-  }
-  const name = prompt('İz adı', 'Canlı iz')?.trim();
-  if (!name) return;
+function defaultLiveTrailName() {
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  return `Canlı iz ${pad(d.getDate())}.${pad(d.getMonth() + 1)} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+async function autoSaveLiveTrail(points) {
+  const pts = points || liveTrailPoints;
+  if (!pts || pts.length < 2) return false;
   await saveTrailDoc({
-    name,
-    points: liveTrailPoints,
+    name: defaultLiveTrailName(),
+    points: pts,
     source: 'live',
   });
+  return true;
 }
 
 async function savePlaceAt(lat, lng, defaultName) {
@@ -1042,6 +1114,10 @@ async function savePlaceFromChild() {
 
 export function unmountMap() {
   stopHistoryAnim();
+  // Sekmeden çıkarken takip açıksa kaydetmeyi dene (fire-and-forget)
+  if (follow && liveTrailPoints.length >= 2) {
+    autoSaveLiveTrail(liveTrailPoints.slice()).catch(() => {});
+  }
   setKeepAwake('follow', false);
   follow = false;
   liveTrailPoints = [];

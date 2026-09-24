@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:ui';
+import 'package:flutter/foundation.dart' show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -42,6 +43,7 @@ Future<void> initBackgroundService() async {
       initialNotificationTitle: 'Aileİzi',
       initialNotificationContent: 'Konum paylaşılıyor...',
       foregroundServiceNotificationId: 888,
+      foregroundServiceTypes: [AndroidForegroundType.location],
     ),
     iosConfiguration: IosConfiguration(
       autoStart: true,
@@ -66,12 +68,39 @@ Future<bool> onIosBackground(ServiceInstance service) async {
   return true;
 }
 
+LocationSettings _bgLocationSettings() {
+  if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+    return AndroidSettings(
+      accuracy: LocationAccuracy.bestForNavigation,
+      distanceFilter: 8,
+      intervalDuration: const Duration(seconds: 15),
+    );
+  }
+  if (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) {
+    return AppleSettings(
+      accuracy: LocationAccuracy.bestForNavigation,
+      activityType: ActivityType.fitness,
+      distanceFilter: 8,
+      pauseLocationUpdatesAutomatically: false,
+      showBackgroundLocationIndicator: true,
+      allowBackgroundLocationUpdates: true,
+    );
+  }
+  return const LocationSettings(
+    accuracy: LocationAccuracy.bestForNavigation,
+    distanceFilter: 8,
+  );
+}
+
 @pragma('vm:entry-point')
 void onServiceStart(ServiceInstance service) async {
   DartPluginRegistrant.ensureInitialized();
   await Firebase.initializeApp();
 
-  Future<void> tick() async {
+  StreamSubscription<Position>? posSub;
+  Timer? fallbackTimer;
+
+  Future<void> tick({Position? forced}) async {
     final db = FirebaseFirestore.instance;
     final auth = FirebaseAuth.instance;
     final user = auth.currentUser;
@@ -102,19 +131,17 @@ void onServiceStart(ServiceInstance service) async {
         return;
       }
 
-      Position? position;
-      try {
-        position = await Geolocator.getCurrentPosition(
-          locationSettings: const LocationSettings(
-            accuracy: LocationAccuracy.bestForNavigation,
-            timeLimit: Duration(seconds: 18),
-          ),
-        );
-      } catch (_) {
-        position = await Geolocator.getLastKnownPosition();
+      Position? position = forced;
+      if (position == null) {
+        try {
+          position = await Geolocator.getCurrentPosition(
+            locationSettings: _bgLocationSettings(),
+          );
+        } catch (_) {
+          position = await Geolocator.getLastKnownPosition();
+        }
       }
       if (position == null) {
-        // Konum yok — nabız at, çevrimiçi kalsın
         await db
             .collection('families')
             .doc(familyId)
@@ -139,27 +166,20 @@ void onServiceStart(ServiceInstance service) async {
         return;
       }
 
-      final prevSnap = await db
-          .collection('families')
-          .doc(familyId)
-          .collection('locations')
-          .doc(user.uid)
-          .get();
+      final prefs = await SharedPreferences.getInstance();
+      final prevLat = prefs.getDouble('last_fix_lat');
+      final prevLng = prefs.getDouble('last_fix_lng');
 
       double speedMps = position.speed;
       if (!speedMps.isFinite || speedMps < 0.5) {
-        final prev = prevSnap.data();
-        if (prev != null) {
-          final plat = (prev['latitude'] as num?)?.toDouble();
-          final plng = (prev['longitude'] as num?)?.toDouble();
-          final pts = prev['timestamp'];
-          DateTime? prevAt;
-          if (pts is Timestamp) prevAt = pts.toDate();
-          if (plat != null && plng != null && prevAt != null) {
-            final dt = DateTime.now().difference(prevAt).inMilliseconds / 1000.0;
+        if (prevLat != null && prevLng != null) {
+          final prevAt = prefs.getInt('last_fix_at_ms');
+          if (prevAt != null) {
+            final dt =
+                (DateTime.now().millisecondsSinceEpoch - prevAt) / 1000.0;
             if (dt >= 2 && dt <= 90) {
               final dist = Geolocator.distanceBetween(
-                  plat, plng, position.latitude, position.longitude);
+                  prevLat, prevLng, position.latitude, position.longitude);
               if (dist >= 3) {
                 final calc = dist / dt;
                 if (calc.isFinite && calc >= 0 && calc < 55) speedMps = calc;
@@ -172,8 +192,7 @@ void onServiceStart(ServiceInstance service) async {
         if (!speedMps.isFinite || speedMps < 0) speedMps = 0;
       }
 
-      if (position.accuracy > 80 && prevSnap.exists) {
-        // Kötü GPS — konumu bozma, nabız güncelle
+      if (position.accuracy > 80 && prevLat != null) {
         await db
             .collection('families')
             .doc(familyId)
@@ -221,7 +240,8 @@ void onServiceStart(ServiceInstance service) async {
           childName: childName,
           lat: position.latitude,
           lng: position.longitude,
-          previousLocationDoc: prevSnap.data(),
+          previousLat: prevLat,
+          previousLng: prevLng,
         );
       } catch (_) {}
 
@@ -232,15 +252,30 @@ void onServiceStart(ServiceInstance service) async {
           .doc(user.uid)
           .set(locationData, SetOptions(merge: true));
 
-      try {
-        await db
-            .collection('families')
-            .doc(familyId)
-            .collection('location_history')
-            .doc(user.uid)
-            .collection('entries')
-            .add(locationData);
-      } catch (_) {}
+      await prefs.setDouble('last_fix_lat', position.latitude);
+      await prefs.setDouble('last_fix_lng', position.longitude);
+      await prefs.setInt(
+          'last_fix_at_ms', DateTime.now().millisecondsSinceEpoch);
+
+      final lastHist = prefs.getInt('last_hist_at_ms') ?? 0;
+      final nowMs = DateTime.now().millisecondsSinceEpoch;
+      double moved = 9999;
+      if (prevLat != null && prevLng != null) {
+        moved = Geolocator.distanceBetween(
+            prevLat, prevLng, position.latitude, position.longitude);
+      }
+      if (moved >= 40 || (nowMs - lastHist) / 1000.0 >= 300) {
+        try {
+          await db
+              .collection('families')
+              .doc(familyId)
+              .collection('location_history')
+              .doc(user.uid)
+              .collection('entries')
+              .add(locationData);
+          await prefs.setInt('last_hist_at_ms', nowMs);
+        } catch (_) {}
+      }
 
       await db
           .collection('families')
@@ -269,7 +304,6 @@ void onServiceStart(ServiceInstance service) async {
             .where('readByChild', isEqualTo: false)
             .limit(20)
             .get();
-        final prefs = await SharedPreferences.getInstance();
         for (final doc in chatSnap.docs) {
           final d = doc.data();
           if (d['senderRole']?.toString() != 'parent') continue;
@@ -310,9 +344,27 @@ void onServiceStart(ServiceInstance service) async {
     }
   }
 
-  // İlk konumu hemen gönder; sonra periyodik devam et.
+  // Sürekli konum akışı (ekran kapalı / arka plan)
+  try {
+    posSub = Geolocator.getPositionStream(
+      locationSettings: _bgLocationSettings(),
+    ).listen(
+      (pos) => tick(forced: pos),
+      onError: (_) {},
+    );
+  } catch (_) {}
+
+  // İlk anında + akış kesilirse yedek timer
   await tick();
-  Timer.periodic(const Duration(seconds: 25), (_) => tick());
+  fallbackTimer = Timer.periodic(const Duration(seconds: 20), (_) => tick());
+
+  service.on('stop').listen((_) async {
+    await posSub?.cancel();
+    fallbackTimer?.cancel();
+    if (service is AndroidServiceInstance) {
+      service.stopSelf();
+    }
+  });
 }
 
 Future<int> _getBatteryLevel() async {

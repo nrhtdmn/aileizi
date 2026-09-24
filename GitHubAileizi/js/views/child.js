@@ -4,6 +4,7 @@ import {
   doc,
   setDoc,
   getDoc,
+  getDocs,
   updateDoc,
   addDoc,
   collection,
@@ -20,9 +21,11 @@ import {
 } from '../firebase-app.js';
 import { Brand } from '../config.js';
 import { t, toast, escapeHtml, haversineM, fmtTime } from '../utils.js';
+import { setKeepAwake } from '../keep-awake.js';
 
 const PREF_FAMILY = 'aileizi_child_family';
 const PREF_NAME = 'aileizi_child_name';
+const PREF_GEO_STATE = 'aileizi_geo_inside';
 
 let watchId = null;
 let chatUnsub = null;
@@ -30,6 +33,30 @@ let locTimer = null;
 let lastLat = null;
 let lastLng = null;
 let lastWrite = 0;
+let childSessionName = '';
+/** @type {{ familyId: string, uid: string, name?: string } | null} */
+let activeLocSession = null;
+/** @type {Record<string, boolean>} fenceId → wasInside */
+let geoInsideCache = {};
+
+try {
+  geoInsideCache = JSON.parse(localStorage.getItem(PREF_GEO_STATE) || '{}') || {};
+} catch (_) {
+  geoInsideCache = {};
+}
+
+function persistGeoState() {
+  try {
+    localStorage.setItem(PREF_GEO_STATE, JSON.stringify(geoInsideCache));
+  } catch (_) {}
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible' || !activeLocSession) return;
+  writeLocation(activeLocSession.familyId, activeLocSession.uid, true).catch(
+    () => {},
+  );
+});
 
 export function mountChildAuth(root, { onJoined }) {
   root.innerHTML = `
@@ -161,6 +188,7 @@ export async function resolveChildSession() {
 
 export function mountChildHome(root, session) {
   let sharing = session.sharing;
+  childSessionName = session.name || 'Çocuk';
 
   root.innerHTML = `
     <div class="app-shell child">
@@ -183,6 +211,10 @@ export function mountChildHome(root, session) {
           <button class="sos-btn" id="sos-btn" type="button">SOS</button>
           <p class="meta" style="margin-top:14px">${t('sos_hold')}</p>
         </div>
+        <p class="meta" style="margin:12px 16px 0;line-height:1.4">
+          Konumun güncel kalması için bu sekmeyi açık bırakın. Uygulama ekranı uyutmaması için açık tutar.
+          En güvenilir takip için <b>Aileİzi Çocuk</b> uygulamasını kullanın (arka plan + ekran kapalı).
+        </p>
       </div>
 
       <div class="view child-chat-view hidden" id="child-tab-chat">
@@ -314,9 +346,13 @@ export function mountChildHome(root, session) {
 function startLocationWatch(session, sharing, onStatus) {
   stopLocationWatch();
   if (!sharing || !navigator.geolocation) {
+    setKeepAwake('child-loc', false);
     onStatus?.('Konum kullanılamıyor');
     return;
   }
+  activeLocSession = session;
+  // Ekran/sekme uyumasın — arka planda tarayıcı GPS'i kısıtlar
+  setKeepAwake('child-loc', true);
   onStatus?.('Konum alınıyor…');
   watchId = navigator.geolocation.watchPosition(
     async (pos) => {
@@ -335,6 +371,8 @@ function startLocationWatch(session, sharing, onStatus) {
         onStatus?.(`Düşük doğruluk (±${Math.round(accuracy)} m), bekleniyor…`);
         return;
       }
+      const prevLat = lastLat;
+      const prevLng = lastLng;
       lastLat = latitude;
       lastLng = longitude;
       lastWrite = now;
@@ -345,6 +383,9 @@ function startLocationWatch(session, sharing, onStatus) {
         speed: speed || 0,
         heading: heading || 0,
       });
+      try {
+        await evaluateGeofences(session, latitude, longitude, prevLat, prevLng);
+      } catch (_) {}
       onStatus?.(
         `Paylaşılıyor · ±${Math.round(accuracy || 0)} m · ${new Date().toLocaleTimeString('tr-TR')}`,
       );
@@ -353,8 +394,8 @@ function startLocationWatch(session, sharing, onStatus) {
     { enableHighAccuracy: true, maximumAge: 5000, timeout: 20000 },
   );
 
-  // heartbeat
   locTimer = setInterval(() => {
+    if (document.visibilityState === 'hidden') return;
     if (lastLat != null) {
       writeLocation(session.familyId, session.uid, true, {
         latitude: lastLat,
@@ -363,8 +404,10 @@ function startLocationWatch(session, sharing, onStatus) {
         speed: 0,
         heading: 0,
       });
+    } else {
+      writeLocation(session.familyId, session.uid, true).catch(() => {});
     }
-  }, 90000);
+  }, 45000);
 }
 
 function stopLocationWatch() {
@@ -376,6 +419,107 @@ function stopLocationWatch() {
     clearInterval(locTimer);
     locTimer = null;
   }
+  activeLocSession = null;
+  setKeepAwake('child-loc', false);
+}
+
+/**
+ * Güvenli bölge giriş/çıkış → geofence_events (ebeveyn bildirimi).
+ * Kalıcı inside durumu kullanır; önceki konum yoksa sadece durumu başlatır.
+ */
+async function evaluateGeofences(session, lat, lng, prevLat, prevLng) {
+  const snap = await getDocs(
+    collection(db, 'families', session.familyId, 'geofences'),
+  );
+  if (snap.empty) return;
+
+  const childName = session.name || childSessionName || 'Çocuk';
+  let changed = false;
+
+  for (const d of snap.docs) {
+    const m = d.data();
+    const childIds = Array.isArray(m.childIds) ? m.childIds : [];
+    if (childIds.length && !childIds.includes(session.uid)) continue;
+
+    const centerLat = Number(m.centerLat);
+    const centerLng = Number(m.centerLng);
+    const radius = Number(m.radiusMeters) || 200;
+    if (!Number.isFinite(centerLat) || !Number.isFinite(centerLng)) continue;
+
+    const notifyExit = m.notifyOnExit !== false;
+    const notifyEnter = m.notifyOnEnter !== false;
+    const name = m.name || 'Bölge';
+    const buffer = Math.min(25, Math.max(10, radius * 0.08));
+    const distNow = haversineM(lat, lng, centerLat, centerLng);
+    const isInside = distNow <= radius;
+    const stateKey = `${session.familyId}_${session.uid}_${d.id}`;
+
+    let wasInside = geoInsideCache[stateKey];
+    if (typeof wasInside !== 'boolean') {
+      if (
+        prevLat != null &&
+        prevLng != null &&
+        Number.isFinite(prevLat) &&
+        Number.isFinite(prevLng)
+      ) {
+        wasInside = haversineM(prevLat, prevLng, centerLat, centerLng) <= radius;
+      } else {
+        geoInsideCache[stateKey] = isInside;
+        changed = true;
+        continue;
+      }
+    }
+
+    const exited = wasInside && distNow > radius + buffer;
+    const entered = !wasInside && distNow < radius - buffer;
+
+    if (exited && notifyExit) {
+      await addDoc(
+        collection(db, 'families', session.familyId, 'geofence_events'),
+        {
+          childId: session.uid,
+          childName,
+          fenceName: name,
+          eventType: 'exit',
+          latitude: lat,
+          longitude: lng,
+          timestamp: serverTimestamp(),
+          notified: false,
+        },
+      );
+    }
+    if (entered && notifyEnter) {
+      await addDoc(
+        collection(db, 'families', session.familyId, 'geofence_events'),
+        {
+          childId: session.uid,
+          childName,
+          fenceName: name,
+          eventType: 'enter',
+          latitude: lat,
+          longitude: lng,
+          timestamp: serverTimestamp(),
+          notified: false,
+        },
+      );
+    }
+
+    const nextInside = exited ? false : entered ? true : wasInside;
+    if (geoInsideCache[stateKey] !== nextInside) {
+      geoInsideCache[stateKey] = nextInside;
+      changed = true;
+    }
+    // Stabil bölgede de güncel durumu tut
+    if (!exited && !entered && geoInsideCache[stateKey] !== isInside) {
+      // Histerezis bandındaysa eski durumu koru
+      if (distNow <= radius - buffer || distNow >= radius + buffer) {
+        geoInsideCache[stateKey] = isInside;
+        changed = true;
+      }
+    }
+  }
+
+  if (changed) persistGeoState();
 }
 
 async function writeLocation(familyId, childId, sharing, coords) {
