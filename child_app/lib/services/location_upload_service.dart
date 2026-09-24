@@ -145,7 +145,24 @@ class LocationUploadService {
     }
 
     final hadFix = prefs.containsKey(_prefLat);
+    final prevLatEarly = prefs.getDouble(_prefLat);
+    final prevLngEarly = prefs.getDouble(_prefLng);
+    final childNameEarly = prefs.getString('cached_child_name') ?? 'Çocuk';
+
+    // Düşük doğrulukta bile geofence kontrol et (konum yazma atlanır)
     if (position.accuracy > 75 && hadFix) {
+      try {
+        await GeofenceHelper.evaluateAndRecord(
+          db: db,
+          familyId: resolvedFamilyId,
+          childId: user.uid,
+          childName: childNameEarly,
+          lat: position.latitude,
+          lng: position.longitude,
+          previousLat: prevLatEarly,
+          previousLng: prevLngEarly,
+        );
+      } catch (_) {}
       if (hbAgeSec < _heartbeatSec) return true;
       return _writeHeartbeat(
         db: db,
@@ -156,8 +173,8 @@ class LocationUploadService {
       );
     }
 
-    final prevLat = prefs.getDouble(_prefLat);
-    final prevLng = prefs.getDouble(_prefLng);
+    final prevLat = prevLatEarly;
+    final prevLng = prevLngEarly;
     double moved = 9999;
     if (prevLat != null && prevLng != null) {
       moved = Geolocator.distanceBetween(
@@ -166,6 +183,22 @@ class LocationUploadService {
         position.latitude,
         position.longitude,
       );
+    }
+
+    // Hareket az olsa da geofence değerlendir
+    if (moved >= 5 || ageSec >= 30) {
+      try {
+        await GeofenceHelper.evaluateAndRecord(
+          db: db,
+          familyId: resolvedFamilyId,
+          childId: user.uid,
+          childName: childNameEarly,
+          lat: position.latitude,
+          lng: position.longitude,
+          previousLat: prevLat,
+          previousLng: prevLng,
+        );
+      } catch (_) {}
     }
 
     final significantMove = moved >= _minMoveMeters;
@@ -195,21 +228,7 @@ class LocationUploadService {
       battery = await Battery().batteryLevel;
     } catch (_) {}
 
-    // Geofence: prefs'teki son konum her zaman yeter (Firestore okumaya gerek yok)
-    final childName = prefs.getString('cached_child_name') ?? 'Çocuk';
-
-    try {
-      await GeofenceHelper.evaluateAndRecord(
-        db: db,
-        familyId: resolvedFamilyId,
-        childId: user.uid,
-        childName: childName,
-        lat: position.latitude,
-        lng: position.longitude,
-        previousLat: prevLat,
-        previousLng: prevLng,
-      );
-    } catch (_) {}
+    final childName = childNameEarly;
 
     final data = {
       'childId': user.uid,

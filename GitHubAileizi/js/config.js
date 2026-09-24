@@ -23,3 +23,11 @@ export const Brand = {
 export const DEFAULT_MAP = { lat: 41.0082, lng: 28.9784, zoom: 12 };
 
 export const OSRM_URL = 'https://router.project-osrm.org/route/v1/driving';
+export const OSRM_MATCH_DRIVING =
+  'https://router.project-osrm.org/match/v1/driving';
+export const OSRM_MATCH_FOOT = 'https://router.project-osrm.org/match/v1/foot';
+
+/** @param {'driving'|'foot'} profile */
+export function osrmRouteUrl(profile = 'driving') {
+  return `https://router.project-osrm.org/route/v1/${profile}`;
+}

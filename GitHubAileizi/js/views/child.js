@@ -361,18 +361,32 @@ function startLocationWatch(session, sharing, onStatus) {
       const moved =
         lastLat == null ||
         haversineM(lastLat, lastLng, latitude, longitude) >= 12;
+
+      // Geofence: doğruluk düşük olsa bile giriş/çıkış kontrol et
+      if (moved || lastLat == null) {
+        try {
+          await evaluateGeofences(
+            session,
+            latitude,
+            longitude,
+            lastLat,
+            lastLng,
+          );
+        } catch (e) {
+          console.warn('[child-geofence]', e);
+        }
+      }
+
       if (!moved && now - lastWrite < 20000) {
         onStatus?.(
           `Paylaşılıyor · ±${Math.round(accuracy || 0)} m · ${new Date().toLocaleTimeString('tr-TR')}`,
         );
         return;
       }
-      if (accuracy && accuracy > 80 && lastLat != null) {
+      if (accuracy && accuracy > 120 && lastLat != null) {
         onStatus?.(`Düşük doğruluk (±${Math.round(accuracy)} m), bekleniyor…`);
         return;
       }
-      const prevLat = lastLat;
-      const prevLng = lastLng;
       lastLat = latitude;
       lastLng = longitude;
       lastWrite = now;
@@ -383,9 +397,6 @@ function startLocationWatch(session, sharing, onStatus) {
         speed: speed || 0,
         heading: heading || 0,
       });
-      try {
-        await evaluateGeofences(session, latitude, longitude, prevLat, prevLng);
-      } catch (_) {}
       onStatus?.(
         `Paylaşılıyor · ±${Math.round(accuracy || 0)} m · ${new Date().toLocaleTimeString('tr-TR')}`,
       );
@@ -441,8 +452,8 @@ async function evaluateGeofences(session, lat, lng, prevLat, prevLng) {
     const childIds = Array.isArray(m.childIds) ? m.childIds : [];
     if (childIds.length && !childIds.includes(session.uid)) continue;
 
-    const centerLat = Number(m.centerLat);
-    const centerLng = Number(m.centerLng);
+    const centerLat = Number(m.centerLat ?? m.lat);
+    const centerLng = Number(m.centerLng ?? m.lng);
     const radius = Number(m.radiusMeters) || 200;
     if (!Number.isFinite(centerLat) || !Number.isFinite(centerLng)) continue;
 

@@ -16,8 +16,8 @@ import {
   ensureParentProfile,
   tsToDate,
 } from '../firebase-app.js';
-import { DEFAULT_MAP, OSRM_URL } from '../config.js';
-import { toast, escapeHtml, fmtTime, pickFenceColor, normalizeFenceColor } from '../utils.js';
+import { DEFAULT_MAP, OSRM_URL, osrmRouteUrl, OSRM_MATCH_DRIVING, OSRM_MATCH_FOOT } from '../config.js';
+import { toast, escapeHtml, fmtTime, pickFenceColor, normalizeFenceColor, haversineM } from '../utils.js';
 import { setKeepAwake } from '../keep-awake.js';
 import {
   getShowAllFences,
@@ -53,6 +53,11 @@ let didFit = false;
 let pendingFence = null;
 let fencePreview = null;
 let liveTrailPoints = [];
+/** Ham GPS çıpaları (OSRM segmentleri için) */
+let liveRawAnchors = [];
+let liveOsrmBusy = false;
+/** @type {Promise<void>} */
+let liveOsrmChain = Promise.resolve();
 let liveTrailLine = null;
 let animTimer = null;
 let animMarker = null;
@@ -148,13 +153,13 @@ export function mountMap(root) {
       <div class="tools-panel chrome-el" id="tools-panel">
         <div class="tools-section">
           <h4>Takip</h4>
-          <p class="hint">Çocuğu canlı izle. Durdurunca iz otomatik kaydolur. Ekran kapanmaz.</p>
+          <p class="hint">Çocuğu canlı izle. Çizgi yollara oturur; durdurunca rota+iz kaydolur. Ekran kapanmaz.</p>
           <button class="btn btn-sm btn-outline" id="btn-follow" type="button">Takibi başlat</button>
           <button class="btn btn-sm btn-outline" id="btn-clear-live" type="button">Canlı izi sil</button>
         </div>
         <div class="tools-section">
           <h4>İz (geçmiş)</h4>
-          <p class="hint">Süre seç → yükle → oynat. Harita yolu takip eder.</p>
+          <p class="hint">Süre seç → yükle (yola oturtulur) → oynat. Hız aşağıdan.</p>
           <select id="history-hours" aria-label="Süre">
             <option value="1">Son 1 saat</option>
             <option value="3">Son 3 saat</option>
@@ -491,6 +496,7 @@ export function mountMap(root) {
       selectedChildId = e.target.value || null;
       if (follow) {
         liveTrailPoints = [];
+        liveRawAnchors = [];
         refreshLiveTrail();
       }
       renderMarkers();
@@ -533,7 +539,6 @@ async function toggleFollow() {
     return;
   }
   if (follow) {
-    // Bitir → otomatik kaydet
     const pts = liveTrailPoints.slice();
     follow = false;
     if (btn) {
@@ -542,13 +547,15 @@ async function toggleFollow() {
     }
     setKeepAwake('follow', false);
     if (pts.length >= 2) {
-      setStatus('Takip bitti · iz kaydediliyor…');
+      setStatus('Takip bitti · yol rotası kaydediliyor…');
       await autoSaveLiveTrail(pts);
       liveTrailPoints = [];
+      liveRawAnchors = [];
       refreshLiveTrail();
-      setStatus('Takip kapalı · iz kaydedildi');
+      setStatus('Takip kapalı · rota ve iz kaydedildi');
     } else {
       liveTrailPoints = [];
+      liveRawAnchors = [];
       refreshLiveTrail();
       setStatus('Takip kapalı');
       toast('Takip durdu — kaydedilecek iz yoktu');
@@ -562,22 +569,139 @@ async function toggleFollow() {
   }
   setKeepAwake('follow', true);
   liveTrailPoints = [];
+  liveRawAnchors = [];
+  liveOsrmChain = Promise.resolve();
   const m = locByChild.get(selectedChildId);
   const lat = asNum(m?.latitude);
   const lng = asNum(m?.longitude);
   if (lat != null && lng != null) {
+    liveRawAnchors.push([lat, lng]);
     liveTrailPoints.push([lat, lng]);
     refreshLiveTrail();
     map.setView([lat, lng], Math.max(map.getZoom(), 16));
   }
-  setStatus('Takip açık · ekran kapanmaz · durdurunca otomatik kaydolur');
-  toast('Takip başladı', 'success');
+  setStatus('Takip açık · yollara oturtuluyor · durdurunca kaydolur');
+  toast('Takip başladı — çizgi yolları takip eder', 'success');
 }
 
 function clearLiveTrail() {
   liveTrailPoints = [];
+  liveRawAnchors = [];
   refreshLiveTrail();
   toast('Canlı iz temizlendi');
+}
+
+/**
+ * İki GPS noktası arasını OSRM ile yola oturt.
+ * @returns {Promise<Array<[number,number]>|null>}
+ */
+async function osrmSnapSegment(from, to, speedKmh) {
+  const profile = speedKmh != null && speedKmh < 9 ? 'foot' : 'driving';
+  const base = osrmRouteUrl(profile);
+  const url = `${base}/${from[1]},${from[0]};${to[1]},${to[0]}?overview=full&geometries=geojson`;
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('osrm http');
+    const data = await res.json();
+    const geo = data?.routes?.[0]?.geometry?.coordinates;
+    if (!geo?.length) return null;
+    return geo.map(([lng, lat]) => /** @type {[number,number]} */ ([lat, lng]));
+  } catch (_) {
+    // foot başarısızsa driving dene
+    if (profile === 'foot') {
+      try {
+        const url2 = `${osrmRouteUrl('driving')}/${from[1]},${from[0]};${to[1]},${to[0]}?overview=full&geometries=geojson`;
+        const res = await fetch(url2);
+        const data = await res.json();
+        const geo = data?.routes?.[0]?.geometry?.coordinates;
+        if (!geo?.length) return null;
+        return geo.map(([lng, lat]) => /** @type {[number,number]} */ ([lat, lng]));
+      } catch (_) {
+        return null;
+      }
+    }
+    return null;
+  }
+}
+
+/** Geçmiş iz / çoklu nokta — match API ile yola oturt */
+async function osrmMatchTrace(pts, speedHintKmh) {
+  if (!pts || pts.length < 2) return pts;
+  // OSRM URL limiti — en fazla ~80 çapa
+  const step = Math.max(1, Math.ceil(pts.length / 80));
+  const sampled = pts.filter((_, i) => i % step === 0 || i === pts.length - 1);
+  const coords = sampled.map((p) => `${p[1]},${p[0]}`).join(';');
+  const matchBase =
+    speedHintKmh != null && speedHintKmh < 9
+      ? OSRM_MATCH_FOOT
+      : OSRM_MATCH_DRIVING;
+  try {
+    const res = await fetch(
+      `${matchBase}/${coords}?overview=full&geometries=geojson&tidy=true`,
+    );
+    const data = await res.json();
+    const geo = data?.matchings?.[0]?.geometry?.coordinates;
+    if (geo?.length) {
+      return geo.map(([lng, lat]) => /** @type {[number,number]} */ ([lat, lng]));
+    }
+  } catch (_) {}
+  // Fallback: peş peşe segment route
+  try {
+    const coords2 = sampled.map((p) => `${p[1]},${p[0]}`).join(';');
+    const res = await fetch(
+      `${OSRM_URL}/${coords2}?overview=full&geometries=geojson`,
+    );
+    const data = await res.json();
+    const geo = data?.routes?.[0]?.geometry?.coordinates;
+    if (geo?.length) {
+      return geo.map(([lng, lat]) => /** @type {[number,number]} */ ([lat, lng]));
+    }
+  } catch (_) {}
+  return pts;
+}
+
+/**
+ * Takip sırasında yeni GPS noktası — yola oturtup çizgiye ekle.
+ */
+function appendFollowPoint(lat, lng, speedKmh) {
+  const lastRaw = liveRawAnchors[liveRawAnchors.length - 1];
+  if (lastRaw && haversineM(lastRaw[0], lastRaw[1], lat, lng) < 18) {
+    return;
+  }
+  liveRawAnchors.push([lat, lng]);
+  if (liveRawAnchors.length === 1) {
+    liveTrailPoints = [[lat, lng]];
+    refreshLiveTrail();
+    return;
+  }
+
+  const from = liveRawAnchors[liveRawAnchors.length - 2];
+  const to = /** @type {[number, number]} */ ([lat, lng]);
+
+  liveOsrmChain = liveOsrmChain.then(async () => {
+    if (!follow) return;
+    liveOsrmBusy = true;
+    const snapped = await osrmSnapSegment(from, to, speedKmh);
+    liveOsrmBusy = false;
+    if (!follow) return;
+    if (snapped && snapped.length >= 2) {
+      // İlk nokta zaten trail'de — devamını ekle
+      liveTrailPoints.push(...snapped.slice(1));
+    } else {
+      liveTrailPoints.push(to);
+    }
+    if (liveTrailPoints.length > 8000) {
+      liveTrailPoints = liveTrailPoints.slice(-6000);
+    }
+    refreshLiveTrail();
+    setStatus(
+      `Takip · yol rotası · ${liveTrailPoints.length} nokta${liveOsrmBusy ? '…' : ''}`,
+    );
+  }).catch(() => {
+    liveOsrmBusy = false;
+    liveTrailPoints.push(to);
+    refreshLiveTrail();
+  });
 }
 
 function refreshLiveTrail() {
@@ -621,7 +745,7 @@ async function addSafeZoneFromMap() {
       centerLng: center.lng,
       radiusMeters: radius,
       color,
-      childIds: selectedChildId ? [selectedChildId] : [],
+      childIds: [],
       notifyOnEnter: true,
       notifyOnExit: true,
       createdAt: serverTimestamp(),
@@ -729,21 +853,13 @@ function renderMarkers() {
 
     if (follow && selectedChildId === id) {
       map.panTo([lat, lng], { animate: true });
-      const last = liveTrailPoints[liveTrailPoints.length - 1];
-      if (!last || last[0] !== lat || last[1] !== lng) {
-        // throttle ~12m moves already done on child; here take every update if moved
-        if (
-          !last ||
-          Math.abs(last[0] - lat) > 0.00005 ||
-          Math.abs(last[1] - lng) > 0.00005
-        ) {
-          liveTrailPoints.push([lat, lng]);
-          if (liveTrailPoints.length > 2000) liveTrailPoints.shift();
-          refreshLiveTrail();
-        }
-      }
+      const speedKmh =
+        m.speedKmh != null && Number.isFinite(Number(m.speedKmh))
+          ? Number(m.speedKmh)
+          : null;
+      appendFollowPoint(lat, lng, speedKmh);
       setStatus(
-        `Takip · ${liveTrailPoints.length} nokta · ekran açık kalır`,
+        `Takip · yol rotası · ${liveTrailPoints.length} nokta · ekran açık`,
       );
     }
   }
@@ -836,17 +952,25 @@ async function loadHistory() {
       const lng = asNum(m.longitude);
       if (lat != null && lng != null) pts.push([lat, lng]);
     });
-    historyAnimPts = pts;
-    const animBtn = document.getElementById('btn-anim');
-    if (animBtn) animBtn.disabled = pts.length < 2;
     if (pts.length < 2) {
+      historyAnimPts = [];
+      const animBtn = document.getElementById('btn-anim');
+      if (animBtn) animBtn.disabled = true;
       toast(`Son ${historyHours} saatte yeterli iz yok`);
       return;
     }
-    L.polyline(pts, { color: '#4a90d9', weight: 4, opacity: 0.55 }).addTo(
+
+    setStatus('İz yollara oturtuluyor…');
+    toast('Yol rotası hesaplanıyor…');
+    const roadPts = await osrmMatchTrace(pts, null);
+    historyAnimPts = roadPts?.length >= 2 ? roadPts : pts;
+    const animBtn = document.getElementById('btn-anim');
+    if (animBtn) animBtn.disabled = historyAnimPts.length < 2;
+
+    L.polyline(historyAnimPts, { color: '#4a90d9', weight: 4, opacity: 0.75 }).addTo(
       historyLayer,
     );
-    L.circleMarker(pts[0], {
+    L.circleMarker(historyAnimPts[0], {
       radius: 7,
       color: '#2d6a4f',
       fillColor: '#2d6a4f',
@@ -854,7 +978,7 @@ async function loadHistory() {
     })
       .bindPopup('Başlangıç')
       .addTo(historyLayer);
-    L.circleMarker(pts[pts.length - 1], {
+    L.circleMarker(historyAnimPts[historyAnimPts.length - 1], {
       radius: 7,
       color: '#c62828',
       fillColor: '#c62828',
@@ -862,8 +986,12 @@ async function loadHistory() {
     })
       .bindPopup('Son')
       .addTo(historyLayer);
-    map.fitBounds(pts, { padding: [30, 30] });
-    toast(`${pts.length} nokta yüklendi — Oynat’a bas`, 'success');
+    map.fitBounds(historyAnimPts, { padding: [30, 30] });
+    setStatus(`İz hazır · ${historyAnimPts.length} yol noktası`);
+    toast(
+      `${historyAnimPts.length} yol noktası — Oynat’a bas`,
+      'success',
+    );
   } catch (e) {
     toast(e.message || 'Geçmiş yüklenemedi', 'error');
   }
@@ -1003,7 +1131,7 @@ async function saveRoute() {
   }
 }
 
-async function saveTrailDoc({ name, points, source, hours }) {
+async function saveTrailDoc({ name, points, source, hours, silent }) {
   const fid = familyId();
   if (!fid || !selectedChildId) {
     toast('Önce üstten bir çocuk seç', 'error');
@@ -1027,7 +1155,7 @@ async function saveTrailDoc({ name, points, source, hours }) {
       hours: hours || null,
       createdAt: serverTimestamp(),
     });
-    toast('İz kaydedildi — Kayıt sekmesi', 'success');
+    if (!silent) toast('İz kaydedildi — Kayıt sekmesi', 'success');
   } catch (e) {
     toast(e.message || 'İz kaydı başarısız', 'error');
   }
@@ -1057,11 +1185,46 @@ function defaultLiveTrailName() {
 async function autoSaveLiveTrail(points) {
   const pts = points || liveTrailPoints;
   if (!pts || pts.length < 2) return false;
+  const name = defaultLiveTrailName();
+
+  // Son bir kez ham çıpalardan yola oturtmayı dene (daha temiz rota)
+  let roadPts = pts;
+  if (liveRawAnchors.length >= 2) {
+    const matched = await osrmMatchTrace(liveRawAnchors, null);
+    if (matched?.length >= 2) roadPts = matched;
+  }
+
   await saveTrailDoc({
-    name: defaultLiveTrailName(),
-    points: pts,
-    source: 'live',
+    name,
+    points: roadPts,
+    source: 'live-road',
+    silent: true,
   });
+
+  // Aynı çizgiyi rota olarak da kaydet
+  const fid = familyId();
+  if (fid && selectedChildId) {
+    try {
+      await addDoc(collection(db, 'families', fid, 'routes'), {
+        name: name.replace(/^Canlı iz/, 'Takip rotası'),
+        childId: selectedChildId,
+        mode: 'live-road',
+        points: roadPts.map((p) =>
+          Array.isArray(p)
+            ? { latitude: p[0], longitude: p[1] }
+            : { latitude: p.latitude, longitude: p.longitude },
+        ),
+        deviationMeters: 80,
+        active: false,
+        isDeviated: false,
+        recording: false,
+        createdAt: serverTimestamp(),
+      });
+      toast('Rota ve iz kaydedildi — Kayıt sekmesi', 'success');
+    } catch (_) {
+      // trail already saved
+    }
+  }
   return true;
 }
 
@@ -1121,6 +1284,7 @@ export function unmountMap() {
   setKeepAwake('follow', false);
   follow = false;
   liveTrailPoints = [];
+  liveRawAnchors = [];
   liveTrailLine = null;
   historyAnimPts = [];
   highlightLayer = null;

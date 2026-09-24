@@ -9,6 +9,10 @@ import {
   where,
 } from './firebase-app.js';
 import { notifyBrowser, toast } from './utils.js';
+import {
+  startParentGeofenceWatch,
+  stopParentGeofenceWatch,
+} from './geofence-watch.js';
 
 const PREF_KEY = 'aileizi_alert_prefs';
 
@@ -90,6 +94,7 @@ export async function startParentAlerts() {
   stopParentAlerts();
   startedFor = uid;
   await ensurePermission();
+  startParentGeofenceWatch(uid);
 
   const prefs = () => getAlertPrefs();
 
@@ -150,6 +155,19 @@ export async function startParentAlerts() {
         seenGeo.add(id);
         const e = ch.doc.data();
         const tip = e.eventType === 'exit' ? 'çıktı' : 'girdi';
+        // Aynı giriş/çıkış birkaç saniye içinde iki kaynaktan gelebilir — tek bildirim
+        if (!startParentAlerts._geoDedupe) startParentAlerts._geoDedupe = new Map();
+        const dedupe = `${e.childId}-${e.fenceName}-${e.eventType}`;
+        const prevT = startParentAlerts._geoDedupe.get(dedupe) || 0;
+        if (Date.now() - prevT < 90000) {
+          try {
+            await updateDoc(doc(db, 'families', uid, 'geofence_events', id), {
+              notified: true,
+            });
+          } catch (_) {}
+          return;
+        }
+        startParentAlerts._geoDedupe.set(dedupe, Date.now());
         await alertNow(
           'Güvenli bölge',
           `${e.childName || 'Çocuk'} «${e.fenceName || 'bölge'}» bölgesine ${tip}`,
@@ -267,6 +285,7 @@ export async function startParentAlerts() {
 }
 
 export function stopParentAlerts() {
+  stopParentGeofenceWatch();
   stoppers.forEach((s) => {
     try {
       if (typeof s === 'function') s();

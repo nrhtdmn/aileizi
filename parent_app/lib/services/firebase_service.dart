@@ -228,8 +228,13 @@ class FirebaseService {
         .doc(fid)
         .collection('locations')
         .snapshots()
-        .map((snap) =>
-            snap.docs.map((doc) => LocationData.fromMap(doc.data())).toList());
+        .map((snap) => snap.docs
+            .map((doc) {
+              final data = Map<String, dynamic>.from(doc.data());
+              data['childId'] ??= doc.id;
+              return LocationData.fromMap(data);
+            })
+            .toList());
   }
 
   /// Belirli çocuğun konum geçmişi (son 24 saat)

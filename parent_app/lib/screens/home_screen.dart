@@ -6,7 +6,9 @@ import '../models/models.dart';
 import '../services/firebase_service.dart';
 import '../services/parent_nav.dart';
 import '../services/notification_service.dart';
+import '../services/geofence_service.dart';
 import '../services/alert_background_service.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../utils/chat_helpers.dart';
 import '../l10n/app_locale.dart';
 import 'map_screen.dart';
@@ -28,6 +30,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   StreamSubscription<List<RouteEvent>>? _routeSub;
   StreamSubscription<List<SosEvent>>? _sosSub;
   StreamSubscription<List<ChildSummary>>? _childrenSub;
+  StreamSubscription<List<Geofence>>? _fenceListSub;
+  StreamSubscription<List<LocationData>>? _locGeoSub;
   final List<StreamSubscription<List<ChatMessage>>> _chatSubs = [];
   StreamSubscription<RemoteMessage>? _fcmSub;
   StreamSubscription<RemoteMessage>? _fcmOpenedSub;
@@ -35,6 +39,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   final Set<String> _sosSeen = {};
   final Set<String> _chatSeededChildren = {};
   final Set<String> _chatSeen = {};
+  List<Geofence> _fences = [];
+  final Map<String, LocationData> _prevLocForGeo = {};
+  final Map<String, String> _childNameById = {};
+  bool _locGeoSeeded = false;
 
   final List<Widget> _screens = const [
     MapScreen(),
@@ -128,6 +136,53 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       }
     });
 
+    // Ebeveyn tarafında konum → geofence (çocuk yazmasa da bildirim)
+    await _fenceListSub?.cancel();
+    _fenceListSub = svc.watchGeofences().listen((f) {
+      _fences = f;
+    });
+    await _locGeoSub?.cancel();
+    _locGeoSeeded = false;
+    _prevLocForGeo.clear();
+    _locGeoSub = svc.watchChildLocations().listen((locations) async {
+      final fid = svc.familyId;
+      if (fid == null || _fences.isEmpty) return;
+
+      if (!_locGeoSeeded) {
+        for (final loc in locations) {
+          if (loc.latitude.abs() < 0.00001 && loc.longitude.abs() < 0.00001) {
+            continue;
+          }
+          _prevLocForGeo[loc.childId] = loc;
+        }
+        _locGeoSeeded = true;
+        return;
+      }
+
+      for (final loc in locations) {
+        if (loc.latitude.abs() < 0.00001 && loc.longitude.abs() < 0.00001) {
+          continue;
+        }
+        final prev = _prevLocForGeo[loc.childId];
+        if (prev == null) {
+          _prevLocForGeo[loc.childId] = loc;
+          continue;
+        }
+        final name = _childNameById[loc.childId] ?? 'Çocuk';
+        try {
+          await GeofenceService.checkGeofences(
+            geofences: _fences,
+            newLocation: loc,
+            previousLocation: prev,
+            childName: name,
+            familyId: fid,
+            db: FirebaseFirestore.instance,
+          );
+        } catch (_) {}
+        _prevLocForGeo[loc.childId] = loc;
+      }
+    });
+
     await _routeSub?.cancel();
     _routeSub = svc.watchUnnotifiedRouteEvents().listen((events) async {
       for (final e in events) {
@@ -175,6 +230,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
     _chatSubs.clear();
     _childrenSub = svc.watchChildren().listen((children) {
+      for (final c in children) {
+        _childNameById[c.uid] = c.name;
+      }
       _rebindChatSubs(svc, notif, children);
     });
   }
@@ -223,6 +281,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _routeSub?.cancel();
     _sosSub?.cancel();
     _childrenSub?.cancel();
+    _fenceListSub?.cancel();
+    _locGeoSub?.cancel();
     for (final s in _chatSubs) {
       s.cancel();
     }
