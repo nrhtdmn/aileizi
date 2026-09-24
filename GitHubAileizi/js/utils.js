@@ -152,6 +152,44 @@ export function escapeHtml(s) {
     .replace(/"/g, '&quot;');
 }
 
+export const FENCE_COLORS = [
+  { hex: '#2d6a4f', label: 'Yeşil' },
+  { hex: '#2a6f97', label: 'Mavi' },
+  { hex: '#e76f51', label: 'Turuncu' },
+  { hex: '#7b2cbf', label: 'Mor' },
+  { hex: '#c62828', label: 'Kırmızı' },
+  { hex: '#0d9488', label: 'Turkuaz' },
+  { hex: '#b7791f', label: 'Amber' },
+  { hex: '#334155', label: 'Gri' },
+];
+
+export function normalizeFenceColor(hex) {
+  const h = String(hex || '').trim();
+  if (/^#[0-9a-fA-F]{6}$/.test(h)) return h.toLowerCase();
+  return FENCE_COLORS[0].hex;
+}
+
+/** Renk seç: numara veya #hex. İptal → null */
+export function pickFenceColor(current) {
+  const cur = normalizeFenceColor(current || FENCE_COLORS[0].hex);
+  const lines = FENCE_COLORS.map(
+    (c, i) => `${i + 1}) ${c.label} (${c.hex})`,
+  ).join('\n');
+  const ans = prompt(
+    `Bölge rengi seç (1–${FENCE_COLORS.length}) veya #hex yaz:\n${lines}`,
+    cur,
+  );
+  if (ans == null) return null;
+  const t = ans.trim();
+  if (/^#[0-9a-fA-F]{6}$/.test(t)) return t.toLowerCase();
+  const n = Number(t);
+  if (Number.isInteger(n) && n >= 1 && n <= FENCE_COLORS.length) {
+    return FENCE_COLORS[n - 1].hex;
+  }
+  toast('Geçersiz renk', 'error');
+  return null;
+}
+
 /** Paylaş: Web Share API veya panoya kopyala */
 export async function shareText(text, title = 'Aileİzi') {
   const body = String(text || '').trim();

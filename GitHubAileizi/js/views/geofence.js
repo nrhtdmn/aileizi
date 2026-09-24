@@ -13,7 +13,7 @@ import {
   tsToDate,
 } from '../firebase-app.js';
 import { DEFAULT_MAP } from '../config.js';
-import { t, toast, escapeHtml, fmtTime } from '../utils.js';
+import { t, toast, escapeHtml, fmtTime, pickFenceColor, normalizeFenceColor } from '../utils.js';
 
 let map;
 let fenceLayer;
@@ -197,10 +197,13 @@ export function mountGeofence(root) {
       const lat = asNum(g.centerLat);
       const lng = asNum(g.centerLng);
       if (lat == null || lng == null) return;
+      const color = normalizeFenceColor(g.color);
       L.circle([lat, lng], {
         radius: g.radiusMeters || 200,
-        color: '#1b4332',
-        fillOpacity: 0.12,
+        color,
+        weight: 2.5,
+        fillColor: color,
+        fillOpacity: 0.18,
       })
         .bindPopup(escapeHtml(g.name || 'Bölge'))
         .addTo(fenceLayer);
@@ -268,10 +271,11 @@ function renderList(list) {
       (g) => `
     <div class="row" style="margin:8px 10px">
       <h3>${escapeHtml(g.name || 'Bölge')}</h3>
-      <div class="meta">${Math.round(g.radiusMeters || 0)} m · giriş:${g.notifyOnEnter !== false ? 'açık' : 'kapalı'} · çıkış:${g.notifyOnExit !== false ? 'açık' : 'kapalı'}</div>
+      <div class="meta">${Math.round(g.radiusMeters || 0)} m · <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${normalizeFenceColor(g.color)};vertical-align:middle"></span> · giriş:${g.notifyOnEnter !== false ? 'açık' : 'kapalı'} · çıkış:${g.notifyOnExit !== false ? 'açık' : 'kapalı'}</div>
       <div class="row-actions">
         <button class="btn btn-sm btn-outline" data-focus="${g.id}">Göster</button>
         <button class="btn btn-sm btn-outline" data-edit="${g.id}">Düzenle</button>
+        <button class="btn btn-sm btn-outline" data-color="${g.id}">Renk</button>
         <button class="btn btn-sm btn-outline" data-del="${g.id}">${t('delete')}</button>
       </div>
     </div>`,
@@ -320,6 +324,22 @@ function renderList(list) {
       }
     };
   });
+  el.querySelectorAll('[data-color]').forEach((b) => {
+    b.onclick = async () => {
+      const g = list.find((x) => x.id === b.dataset.color);
+      if (!g) return;
+      const color = pickFenceColor(g.color);
+      if (!color) return;
+      try {
+        await updateDoc(doc(db, 'families', auth.currentUser.uid, 'geofences', g.id), {
+          color,
+        });
+        toast('Renk güncellendi', 'success');
+      } catch (e) {
+        toast(e.message, 'error');
+      }
+    };
+  });
 }
 
 async function createFence() {
@@ -332,6 +352,8 @@ async function createFence() {
   const name = prompt('Bölge adı', 'Ev')?.trim();
   if (!name) return;
   const radius = Number(prompt('Yarıçap (metre)', '200')) || 200;
+  const color = pickFenceColor('#2d6a4f');
+  if (!color) return;
   try {
     await ensureParentProfile(auth.currentUser);
     await addDoc(collection(db, 'families', auth.currentUser.uid, 'geofences'), {
@@ -339,6 +361,7 @@ async function createFence() {
       centerLat: center.lat,
       centerLng: center.lng,
       radiusMeters: radius,
+      color,
       childIds: [],
       notifyOnEnter: true,
       notifyOnExit: true,

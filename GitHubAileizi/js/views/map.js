@@ -17,13 +17,14 @@ import {
   tsToDate,
 } from '../firebase-app.js';
 import { DEFAULT_MAP, OSRM_URL } from '../config.js';
-import { toast, escapeHtml, fmtTime } from '../utils.js';
+import { toast, escapeHtml, fmtTime, pickFenceColor, normalizeFenceColor } from '../utils.js';
 import { setKeepAwake } from '../keep-awake.js';
 
 let map;
 let markersLayer;
 let historyLayer;
 let routesLayer;
+let fencesLayer;
 let streetLayer;
 let hybridBase;
 let hybridLabels;
@@ -31,6 +32,7 @@ let unsubFam;
 let unsubLoc;
 let unsubStatus;
 let unsubRoutes;
+let unsubFences;
 let children = [];
 let activeChildIds = new Set();
 let selectedChildId = null;
@@ -39,6 +41,8 @@ let draftPoints = [];
 let draftPolyline;
 let follow = false;
 let mapMode = localStorage.getItem('aileizi_map_mode') || 'hybrid';
+let showFences = localStorage.getItem('aileizi_show_fences') !== '0';
+let fencesCache = [];
 let didFit = false;
 let pendingFence = null;
 let fencePreview = null;
@@ -109,6 +113,7 @@ export function mountMap(root) {
         <div class="map-actions">
           <button class="btn btn-sm btn-outline" id="btn-map-type" type="button">Hibrit</button>
           <button class="btn btn-sm btn-outline" id="btn-center" type="button">Ortala</button>
+          <button class="btn btn-sm btn-outline" id="btn-toggle-fences" type="button">Bölgeler</button>
           <button class="btn btn-sm btn-outline" id="btn-tools" type="button">Araçlar</button>
           <button class="btn btn-sm btn-primary" id="btn-add-fence" type="button">+ Bölge</button>
         </div>
@@ -222,7 +227,10 @@ export function mountMap(root) {
   markersLayer = L.layerGroup().addTo(map);
   historyLayer = L.layerGroup().addTo(map);
   routesLayer = L.layerGroup().addTo(map);
+  fencesLayer = L.layerGroup();
+  if (showFences) fencesLayer.addTo(map);
   highlightLayer = L.layerGroup().addTo(map);
+  syncFenceToggleBtn();
 
   if (pendingShow) {
     const p = pendingShow;
@@ -356,11 +364,29 @@ export function mountMap(root) {
     });
   });
 
+  unsubFences = onSnapshot(collection(db, 'families', fid, 'geofences'), (snap) => {
+    fencesCache = [];
+    snap.forEach((d) => fencesCache.push({ id: d.id, ...d.data() }));
+    renderFencesOnMap();
+  });
+
   root.querySelector('#btn-map-type').onclick = () => {
     mapMode = mapMode === 'hybrid' ? 'street' : 'hybrid';
     applyMapMode();
   };
   root.querySelector('#btn-center').onclick = () => fitToMarkers(true);
+  root.querySelector('#btn-toggle-fences').onclick = () => {
+    showFences = !showFences;
+    localStorage.setItem('aileizi_show_fences', showFences ? '1' : '0');
+    if (showFences) {
+      fencesLayer.addTo(map);
+      renderFencesOnMap();
+    } else {
+      map.removeLayer(fencesLayer);
+    }
+    syncFenceToggleBtn();
+    toast(showFences ? 'Bölgeler görünür' : 'Bölgeler gizli');
+  };
   root.querySelector('#btn-tools').onclick = (e) => {
     const panel = root.querySelector('#tools-panel');
     const open = panel.classList.toggle('open');
@@ -511,6 +537,8 @@ async function addSafeZoneFromMap() {
   const name = prompt('Güvenli bölge adı', 'Ev')?.trim();
   if (!name) return;
   const radius = Number(prompt('Yarıçap (metre)', '200')) || 200;
+  const color = pickFenceColor('#2d6a4f');
+  if (!color) return;
   try {
     await ensureParentProfile(auth.currentUser);
     await addDoc(collection(db, 'families', familyId(), 'geofences'), {
@@ -518,11 +546,18 @@ async function addSafeZoneFromMap() {
       centerLat: center.lat,
       centerLng: center.lng,
       radiusMeters: radius,
+      color,
       childIds: selectedChildId ? [selectedChildId] : [],
       notifyOnEnter: true,
       notifyOnExit: true,
       createdAt: serverTimestamp(),
     });
+    if (!showFences) {
+      showFences = true;
+      localStorage.setItem('aileizi_show_fences', '1');
+      fencesLayer.addTo(map);
+      syncFenceToggleBtn();
+    }
     toast('Güvenli bölge eklendi', 'success');
     pendingFence = null;
     if (fencePreview) {
@@ -532,6 +567,36 @@ async function addSafeZoneFromMap() {
   } catch (e) {
     toast(e.message || 'Eklenemedi', 'error');
   }
+}
+
+function syncFenceToggleBtn() {
+  const btn = document.getElementById('btn-toggle-fences');
+  if (!btn) return;
+  btn.textContent = showFences ? 'Bölgeler ✓' : 'Bölgeler';
+  btn.classList.toggle('is-on', showFences);
+}
+
+function renderFencesOnMap() {
+  if (!fencesLayer) return;
+  fencesLayer.clearLayers();
+  fencesCache.forEach((g) => {
+    const lat = asNum(g.centerLat);
+    const lng = asNum(g.centerLng);
+    if (lat == null || lng == null) return;
+    const color = normalizeFenceColor(g.color);
+    const radius = g.radiusMeters || 200;
+    L.circle([lat, lng], {
+      radius,
+      color,
+      weight: 2.5,
+      fillColor: color,
+      fillOpacity: 0.18,
+    })
+      .bindPopup(
+        `<strong>${escapeHtml(g.name || 'Bölge')}</strong><br>${Math.round(radius)} m`,
+      )
+      .addTo(fencesLayer);
+  });
 }
 
 function setStatus(text) {
@@ -958,10 +1023,13 @@ export function unmountMap() {
   if (unsubLoc) unsubLoc();
   if (unsubStatus) unsubStatus();
   if (unsubRoutes) unsubRoutes();
-  unsubFam = unsubLoc = unsubStatus = unsubRoutes = null;
+  if (unsubFences) unsubFences();
+  unsubFam = unsubLoc = unsubStatus = unsubRoutes = unsubFences = null;
   locByChild.clear();
+  fencesCache = [];
   pendingFence = null;
   fencePreview = null;
+  fencesLayer = null;
   const roots = document.querySelectorAll('.map-view');
   roots.forEach((r) => {
     if (r._onResize) window.removeEventListener('resize', r._onResize);
@@ -1029,12 +1097,13 @@ function applyShowRecord(record) {
       return;
     }
     const radius = Number(record.radiusMeters) || 200;
+    const color = normalizeFenceColor(record.color);
     const circle = L.circle([lat, lng], {
       radius,
-      color: '#1b4332',
+      color,
       weight: 3,
-      fillColor: '#2d6a4f',
-      fillOpacity: 0.2,
+      fillColor: color,
+      fillOpacity: 0.22,
     })
       .bindPopup(`<strong>${name}</strong><br>${Math.round(radius)} m`)
       .addTo(highlightLayer);
@@ -1042,7 +1111,7 @@ function applyShowRecord(record) {
       radius: 6,
       color: '#fff',
       weight: 2,
-      fillColor: '#1b4332',
+      fillColor: color,
       fillOpacity: 1,
     }).addTo(highlightLayer);
     map.fitBounds(circle.getBounds().pad(0.25), { maxZoom: 17 });

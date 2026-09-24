@@ -13,7 +13,7 @@ import {
   deleteField,
   tsToDate,
 } from '../firebase-app.js';
-import { t, fmtTime, toast, escapeHtml, shareText } from '../utils.js';
+import { t, fmtTime, toast, escapeHtml, shareText, pickFenceColor, normalizeFenceColor } from '../utils.js';
 import { showRecordOnMap } from './map.js';
 
 let unsubs = [];
@@ -310,12 +310,15 @@ function renderFences(el, tool) {
     .map(
       (g) => `
     <div class="row">
-      <h3>${escapeHtml(g.name || 'Bölge')}</h3>
+      <h3>${escapeHtml(g.name || 'Bölge')}
+        <span class="badge" style="background:${normalizeFenceColor(g.color)}22;color:${normalizeFenceColor(g.color)};border:1px solid ${normalizeFenceColor(g.color)}55">●</span>
+      </h3>
       <div class="meta">${Math.round(g.radiusMeters || 0)} m · giriş ${g.notifyOnEnter !== false ? 'açık' : 'kapalı'} · çıkış ${g.notifyOnExit !== false ? 'açık' : 'kapalı'}</div>
       <div class="meta">${fmtTime(tsToDate(g.createdAt))}</div>
       <div class="row-actions">
         <button class="btn btn-sm btn-outline" data-show="${g.id}">Göster</button>
         <button class="btn btn-sm btn-outline" data-edit="${g.id}">Düzenle</button>
+        <button class="btn btn-sm btn-outline" data-color="${g.id}">Renk</button>
         <button class="btn btn-sm btn-outline" data-share="${g.id}">Paylaş</button>
         <button class="btn btn-sm btn-outline" data-del="${g.id}">${t('delete')}</button>
       </div>
@@ -335,6 +338,7 @@ function renderFences(el, tool) {
         centerLat: g.centerLat,
         centerLng: g.centerLng,
         radiusMeters: g.radiusMeters,
+        color: g.color,
       });
     };
   });
@@ -358,6 +362,21 @@ function renderFences(el, tool) {
           notifyOnExit: exit,
         });
         toast('Güncellendi', 'success');
+      } catch (e) {
+        toast(e.message, 'error');
+      }
+    };
+  });
+
+  el.querySelectorAll('[data-color]').forEach((b) => {
+    b.onclick = async () => {
+      const g = list.find((x) => x.id === b.dataset.color);
+      if (!g) return;
+      const color = pickFenceColor(g.color);
+      if (!color) return;
+      try {
+        await updateDoc(doc(db, 'families', fid, 'geofences', g.id), { color });
+        toast('Renk güncellendi', 'success');
       } catch (e) {
         toast(e.message, 'error');
       }
