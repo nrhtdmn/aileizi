@@ -95,8 +95,7 @@ export function mountMap(root) {
 
   root.innerHTML = `
     <div class="view map-view">
-      <div class="map-bar">
-        <select id="map-child" aria-label="Çocuk"></select>
+      <div class="map-bar chrome-el">
         <div class="map-actions">
           <button class="btn btn-sm btn-outline" id="btn-map-type" type="button">Hibrit</button>
           <button class="btn btn-sm btn-outline" id="btn-center" type="button">Ortala</button>
@@ -106,14 +105,14 @@ export function mountMap(root) {
           <button class="btn btn-sm btn-primary" id="btn-add-fence" type="button">+ Bölge</button>
         </div>
       </div>
-      <div class="route-panel" id="route-panel">
+      <div class="route-panel chrome-el" id="route-panel">
         <p class="hint" id="draw-hint">Haritaya dokunarak nokta ekle.</p>
         <button class="btn btn-sm btn-outline" id="btn-draw" type="button">Çiz</button>
         <button class="btn btn-sm btn-outline" id="btn-osrm" type="button">Yol bul</button>
         <button class="btn btn-sm btn-outline" id="btn-clear-draft" type="button">Temizle</button>
         <button class="btn btn-sm btn-primary" id="btn-save-route" type="button" disabled>Kaydet</button>
       </div>
-      <div class="map-status" id="map-status">Konumlar yükleniyor…</div>
+      <div class="map-status chrome-el" id="map-status">Konumlar yükleniyor…</div>
       <div class="map-stage">
         <div id="map"></div>
         <div class="map-zoom-fab" aria-label="Yakınlaştır">
@@ -332,11 +331,14 @@ export function mountMap(root) {
   };
   root.querySelector('#btn-save-route').onclick = () => saveRoute();
   root.querySelector('#btn-add-fence').onclick = () => addSafeZoneFromMap();
-  root.querySelector('#map-child').onchange = (e) => {
-    selectedChildId = e.target.value || null;
-    renderMarkers();
-    if (selectedChildId) fitToMarkers(true);
-  };
+  const topChild = document.getElementById('top-child');
+  if (topChild) {
+    topChild.onchange = (e) => {
+      selectedChildId = e.target.value || null;
+      renderMarkers();
+      if (selectedChildId) fitToMarkers(true);
+    };
+  }
 
   map.on('click', (ev) => {
     if (drawMode) {
@@ -360,6 +362,10 @@ export function mountMap(root) {
     renderMarkers();
   }, 150);
   setTimeout(() => map.invalidateSize(), 500);
+
+  const onResize = () => map?.invalidateSize();
+  window.addEventListener('resize', onResize);
+  root._onResize = onResize;
 }
 
 async function addSafeZoneFromMap() {
@@ -405,9 +411,9 @@ function setStatus(text) {
 }
 
 function renderChildSelect() {
-  const sel = document.getElementById('map-child');
+  const sel = document.getElementById('top-child');
   if (!sel) return;
-  const prev = selectedChildId;
+  const prev = selectedChildId ?? sel.value;
   sel.innerHTML =
     `<option value="">Tüm çocuklar</option>` +
     children
@@ -416,6 +422,7 @@ function renderChildSelect() {
           `<option value="${c.uid}" ${prev === c.uid ? 'selected' : ''}>${escapeHtml(c.name)}</option>`,
       )
       .join('');
+  if (prev) selectedChildId = prev || null;
 }
 
 function renderMarkers() {
@@ -612,6 +619,13 @@ export function unmountMap() {
   locByChild.clear();
   pendingFence = null;
   fencePreview = null;
+  if (typeof window !== 'undefined' && map) {
+    // remove resize if stored on last root — handled via window listener cleanup below
+  }
+  const roots = document.querySelectorAll('.map-view');
+  roots.forEach((r) => {
+    if (r._onResize) window.removeEventListener('resize', r._onResize);
+  });
   if (map) {
     map.remove();
     map = null;

@@ -307,24 +307,78 @@ a {
   background: var(--bg);
 }
 
-.topbar {
+.topbar-brand {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 10px;
-  padding: 12px 16px;
-  background: var(--surface);
-  border-bottom: 1px solid var(--line);
-  position: sticky;
-  top: 0;
-  z-index: 20;
+  min-width: 0;
+  flex: 1;
 }
 
-.topbar h2 {
-  margin: 0;
-  font-size: 1.05rem;
+.topbar-logo {
+  border-radius: 10px;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.topbar-titles {
+  min-width: 0;
+}
+
+.topbar-titles h2 {
+  white-space: nowrap;
+}
+
+.top-child-select {
+  max-width: min(160px, 42vw);
+  min-width: 100px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 8px 10px;
+  background: #fff;
+  font-weight: 700;
+  font-size: 0.85rem;
+}
+
+.app-shell.chrome-hidden {
+  padding-bottom: 0;
+}
+
+.app-shell.chrome-hidden #topbar,
+.app-shell.chrome-hidden #bottom-nav,
+.app-shell.chrome-hidden #install-banner,
+.app-shell.chrome-hidden .chrome-el {
+  display: none !important;
+}
+
+.app-shell.chrome-hidden .view.map-view {
+  height: 100dvh;
+}
+
+.app-shell.chrome-hidden .map-stage,
+.app-shell.chrome-hidden #map,
+.app-shell.chrome-hidden #geofence-map {
+  min-height: 100dvh;
+  height: 100%;
+}
+
+.chrome-show-fab {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  z-index: 60;
+  border: 0;
+  border-radius: 999px;
+  padding: 10px 16px;
   font-weight: 800;
+  background: rgba(255, 255, 255, 0.92);
   color: var(--green);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
+  backdrop-filter: blur(8px);
+}
+
+.chrome-show-fab.hidden {
+  display: none !important;
 }
 
 .app-shell.child .bottom-nav {

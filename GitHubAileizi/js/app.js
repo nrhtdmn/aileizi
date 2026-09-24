@@ -26,11 +26,13 @@ import {
   unmountChild,
 } from './views/child.js';
 import { startParentAlerts, stopParentAlerts } from './alerts.js';
+import { setKeepAwake } from './keep-awake.js';
 
 const app = document.getElementById('app');
 let currentTab = 0;
 let unmountCurrent = null;
 let deferredPrompt = null;
+let chromeHidden = false;
 
 const NAV = [
   { id: 'map', label: 'nav_map', ico: 'H' },
@@ -120,6 +122,7 @@ function cleanup() {
   unmountSettings();
   unmountChild();
   stopParentAlerts();
+  setKeepAwake(false);
 }
 
 function renderParentAuth() {
@@ -245,12 +248,19 @@ function renderParentAuth() {
 
 function renderParentShell() {
   app.innerHTML = `
-    <div class="app-shell">
-      <header class="topbar">
-        <div>
-          <h2>${Brand.name}</h2>
-          <div class="sub">${t('parent')} · ${escape(auth.currentUser?.displayName || auth.currentUser?.email || '')}</div>
+    <div class="app-shell" id="app-shell">
+      <header class="topbar" id="topbar">
+        <div class="topbar-brand">
+          <img src="./assets/logo.png" alt="" class="topbar-logo" width="36" height="36" />
+          <div class="topbar-titles">
+            <h2>${Brand.name}</h2>
+            <div class="sub">${t('parent')}</div>
+          </div>
+          <select id="top-child" class="top-child-select" aria-label="Çocuk">
+            <option value="">Tüm çocuklar</option>
+          </select>
         </div>
+        <button type="button" class="btn btn-sm btn-outline" id="btn-chrome-hide" title="Sadece harita">Gizle</button>
       </header>
       <main id="view-root"></main>
       <nav class="bottom-nav" id="bottom-nav">
@@ -262,12 +272,35 @@ function renderParentShell() {
           </button>`,
         ).join('')}
       </nav>
+      <button type="button" class="chrome-show-fab hidden" id="btn-chrome-show">Göster</button>
       <div class="install-banner" id="install-banner">
         <span>${t('install')}</span>
         <button class="btn btn-sm" id="install-btn" style="background:#fff;color:var(--green)">Yükle</button>
       </div>
     </div>
   `;
+
+  const applyChrome = () => {
+    const shell = document.getElementById('app-shell');
+    const showFab = document.getElementById('btn-chrome-show');
+    const hideBtn = document.getElementById('btn-chrome-hide');
+    shell?.classList.toggle('chrome-hidden', chromeHidden);
+    showFab?.classList.toggle('hidden', !chromeHidden);
+    if (hideBtn) hideBtn.textContent = chromeHidden ? 'Göster' : 'Gizle';
+    setKeepAwake(chromeHidden);
+    // Map needs resize after chrome toggle
+    setTimeout(() => window.dispatchEvent(new Event('resize')), 80);
+  };
+
+  app.querySelector('#btn-chrome-hide').onclick = () => {
+    // Only useful on map-like tabs; still allow globally
+    chromeHidden = !chromeHidden;
+    applyChrome();
+  };
+  app.querySelector('#btn-chrome-show').onclick = () => {
+    chromeHidden = false;
+    applyChrome();
+  };
 
   app.querySelector('#bottom-nav').onclick = (e) => {
     const btn = e.target.closest('button[data-i]');
@@ -276,7 +309,9 @@ function renderParentShell() {
     app.querySelectorAll('#bottom-nav button').forEach((b) =>
       b.classList.toggle('active', b === btn),
     );
+    // Leaving map focus optional — keep chrome state user chose
     showTab(currentTab);
+    syncTopChildVisibility();
   };
 
   app.querySelector('#install-btn')?.addEventListener('click', async () => {
@@ -288,6 +323,15 @@ function renderParentShell() {
   });
 
   showTab(currentTab);
+  syncTopChildVisibility();
+  applyChrome();
+}
+
+function syncTopChildVisibility() {
+  const sel = document.getElementById('top-child');
+  if (!sel) return;
+  const mapTabs = currentTab === 0 || currentTab === 4;
+  sel.classList.toggle('hidden', !mapTabs);
 }
 
 function escape(s) {
@@ -347,6 +391,7 @@ function showTab(i) {
     default:
       break;
   }
+  syncTopChildVisibility();
 }
 
 // PWA service worker

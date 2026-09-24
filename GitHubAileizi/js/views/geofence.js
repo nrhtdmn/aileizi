@@ -70,7 +70,7 @@ export function mountGeofence(root) {
   locByChild.clear();
   root.innerHTML = `
     <div class="view map-view">
-      <div class="map-bar">
+      <div class="map-bar chrome-el">
         <span style="font-weight:800;flex:1">Güvenli bölgeler</span>
         <div class="map-actions">
           <button class="btn btn-sm btn-outline" id="geo-map-type" type="button">Hibrit</button>
@@ -78,7 +78,7 @@ export function mountGeofence(root) {
           <button class="btn btn-sm btn-primary" id="geo-add" type="button">+ Bölge</button>
         </div>
       </div>
-      <div class="map-status" id="geo-status">Haritaya tıkla → merkez seç → + Bölge</div>
+      <div class="map-status chrome-el" id="geo-status">Haritaya tıkla → merkez seç → + Bölge</div>
       <div class="map-stage">
         <div id="geofence-map"></div>
         <div class="map-zoom-fab">
@@ -86,7 +86,7 @@ export function mountGeofence(root) {
           <button type="button" id="geo-zoom-out">−</button>
         </div>
       </div>
-      <div class="map-manage" id="geo-list"></div>
+      <div class="map-manage chrome-el" id="geo-list"></div>
     </div>
   `;
 
@@ -139,6 +139,18 @@ export function mountGeofence(root) {
       } catch {
         children.push({ uid: id, name: id.slice(0, 6) });
       }
+    }
+    const sel = document.getElementById('top-child');
+    if (sel) {
+      const prev = sel.value;
+      sel.innerHTML =
+        `<option value="">Tüm çocuklar</option>` +
+        children
+          .map(
+            (c) =>
+              `<option value="${c.uid}" ${prev === c.uid ? 'selected' : ''}>${escapeHtml(c.name)}</option>`,
+          )
+          .join('');
     }
     for (const id of [...locByChild.keys()]) {
       if (!activeChildIds.has(id)) locByChild.delete(id);
