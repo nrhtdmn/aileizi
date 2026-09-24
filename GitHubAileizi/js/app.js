@@ -157,6 +157,10 @@ function renderParentAuth() {
         <div class="mode-switch">
           <button type="button" id="to-child">${t('child_mode')}</button>
         </div>
+        <p class="dev-credit">
+          <a href="https://www.instagram.com/nurhatduman/" target="_blank" rel="noopener noreferrer">Nurhat DUMAN</a>
+          tarafından geliştirilmiştir.
+        </p>
       </div>
     </div>
   `;

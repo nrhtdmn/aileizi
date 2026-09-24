@@ -57,6 +57,11 @@ export function mountSettings(root) {
         </button>
       </div>
 
+      <p class="dev-credit">
+        <a href="https://www.instagram.com/nurhatduman/" target="_blank" rel="noopener noreferrer">Nurhat DUMAN</a>
+        tarafından geliştirilmiştir.
+      </p>
+
       <div class="settings-panel hidden" id="panel-account">
         <button type="button" class="link-back" data-back>← Geri</button>
         <h3>Hesap</h3>
