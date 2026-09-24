@@ -38,7 +38,6 @@ export function mountChildAuth(root, { onJoined }) {
         <div class="brand-hero">
           <img src="./assets/logo.png" alt="Aileİzi" />
           <h1>${Brand.name}</h1>
-          <p>${Brand.tagline}</p>
           <p>${t('child')}</p>
         </div>
         <div id="child-err" class="error-box hidden"></div>
@@ -168,25 +167,25 @@ export function mountChildHome(root, session) {
         <button class="btn btn-sm btn-outline" id="child-chat-btn" style="background:rgba(255,255,255,.15);color:#fff;border-color:transparent">Mesajlar</button>
       </header>
       <div class="view" id="child-main">
-        <div class="card" style="margin-bottom:12px">
+        <div class="row section">
           <div class="meta" id="child-status">${t('loading')}</div>
           <div class="row-actions">
             <button class="btn btn-sm btn-outline" id="toggle-share">${sharing ? t('sharing_on') : t('sharing_off')}</button>
-            <button class="btn btn-sm btn-outline" id="refresh-loc">Konumu yenile</button>
+            <button class="btn btn-sm btn-outline" id="refresh-loc">Yenile</button>
           </div>
         </div>
         <div class="sos-wrap">
           <button class="sos-btn" id="sos-btn">SOS</button>
-          <p class="meta" style="margin-top:16px">${t('sos_hold')} (3 sn)</p>
+          <p class="meta" style="margin-top:14px">${t('sos_hold')}</p>
         </div>
-        <div id="child-chat-panel" class="hidden" style="margin-top:16px">
+        <div id="child-chat-panel" class="hidden" style="margin-top:12px">
           <div class="chat-pane">
             <div class="chat-msgs" id="child-msgs"></div>
             <div class="chat-compose">
               <input type="file" id="child-file" accept="image/*" hidden />
-              <button class="btn btn-sm btn-outline" id="child-img">📷</button>
-              <input id="child-input" placeholder="Mesaj…" />
-              <button class="btn btn-sm btn-primary" id="child-send">${t('send')}</button>
+              <button class="btn btn-sm btn-outline" id="child-img" type="button">Foto</button>
+              <input id="child-input" type="text" placeholder="Mesaj…" />
+              <button class="btn btn-sm btn-primary" id="child-send" type="button">${t('send')}</button>
             </div>
           </div>
         </div>

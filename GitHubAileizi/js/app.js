@@ -32,12 +32,12 @@ let unmountCurrent = null;
 let deferredPrompt = null;
 
 const NAV = [
-  { id: 'map', label: 'nav_map', ico: '🗺' },
-  { id: 'sos', label: 'nav_sos', ico: '🆘' },
-  { id: 'messages', label: 'nav_messages', ico: '💬' },
-  { id: 'screen', label: 'nav_screen', ico: '📱' },
-  { id: 'geofence', label: 'nav_geofence', ico: '📍' },
-  { id: 'settings', label: 'nav_settings', ico: '⚙' },
+  { id: 'map', label: 'nav_map', ico: 'H' },
+  { id: 'sos', label: 'nav_sos', ico: 'S' },
+  { id: 'messages', label: 'nav_messages', ico: 'M' },
+  { id: 'screen', label: 'nav_screen', ico: 'E' },
+  { id: 'geofence', label: 'nav_geofence', ico: 'B' },
+  { id: 'settings', label: 'nav_settings', ico: 'A' },
 ];
 
 setLang(getLang());
@@ -116,10 +116,9 @@ function renderParentAuth() {
     <div class="auth-screen">
       <div class="auth-card">
         <div class="brand-hero">
-          <img src="./assets/logo.png" alt="Aileİzi" width="96" height="96" />
+          <img src="./assets/logo.png" alt="Aileİzi" width="64" height="64" />
           <h1>${Brand.name}</h1>
-          <p>${Brand.tagline}</p>
-          <p>${t('parent')} · Web</p>
+          <p>${t('parent')}</p>
         </div>
         <div class="lang-row">
           <button type="button" class="chip ${getLang() === 'tr' ? 'active' : ''}" data-lang="tr">TR</button>
@@ -143,7 +142,7 @@ function renderParentAuth() {
           <input id="auth-password" type="password" autocomplete="current-password" />
         </div>
         <button class="btn btn-primary" id="auth-submit">${t('login')}</button>
-        <button class="btn btn-ghost" id="auth-google">${t('google')}</button>
+        <button class="btn btn-outline" id="auth-google" style="width:100%;margin-top:8px">${t('google')}</button>
         <button class="linkish" id="auth-forgot">${t('forgot')}</button>
         <div class="mode-switch">
           <button type="button" id="to-child">${t('child_mode')}</button>
@@ -254,7 +253,7 @@ function renderParentShell() {
       </nav>
       <div class="install-banner" id="install-banner">
         <span>${t('install')}</span>
-        <button class="btn btn-sm" id="install-btn" style="background:#fff;color:var(--parent-primary)">${t('install')}</button>
+        <button class="btn btn-sm" id="install-btn" style="background:#fff;color:var(--green)">Yükle</button>
       </div>
     </div>
   `;

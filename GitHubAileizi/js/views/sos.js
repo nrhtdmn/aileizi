@@ -21,7 +21,7 @@ export function mountSos(root, { onOpenMap } = {}) {
   root.innerHTML = `
     <div class="view">
       <div class="panel-title"><h2>SOS</h2></div>
-      <div class="card-list" id="sos-list"><div class="empty">${t('loading')}</div></div>
+      <div class="list" id="sos-list"><div class="empty">${t('loading')}</div></div>
     </div>
   `;
   const fid = auth.currentUser?.uid;
@@ -57,16 +57,16 @@ function render(list, onOpenMap) {
     .map((e) => {
       const ack = e.acknowledged;
       return `
-      <div class="card">
+      <div class="row">
         <h3>${escapeHtml(e.childName || 'Çocuk')}
-          <span class="badge ${ack ? '' : 'danger'}">${ack ? 'Onaylandı' : 'AKTİF'}</span>
+          <span class="badge ${ack ? '' : 'danger'}">${ack ? 'Onaylandı' : 'Aktif'}</span>
         </h3>
         <div class="meta">${fmtTime(tsToDate(e.timestamp))}</div>
-        <div class="meta">${e.hasLocation === false ? 'Konum yok' : `${e.latitude?.toFixed?.(5)}, ${e.longitude?.toFixed?.(5)}`}</div>
+        <div class="meta">${e.hasLocation === false ? 'Konum yok' : `${Number(e.latitude).toFixed(5)}, ${Number(e.longitude).toFixed(5)}`}</div>
         <div class="row-actions">
           ${!ack ? `<button class="btn btn-sm btn-primary" data-ack="${e.id}">${t('acknowledge')}</button>` : `<button class="btn btn-sm btn-outline" data-react="${e.id}">Yeniden aktif</button>`}
-          <button class="btn btn-sm btn-outline" data-map="${e.id}">Haritada aç</button>
-          <button class="btn btn-sm btn-danger" data-del="${e.id}">${t('delete')}</button>
+          <button class="btn btn-sm btn-outline" data-map="${e.id}">Harita</button>
+          <button class="btn btn-sm btn-outline" data-del="${e.id}">${t('delete')}</button>
         </div>
       </div>`;
     })

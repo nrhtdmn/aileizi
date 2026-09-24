@@ -37,10 +37,10 @@ export function mountMessages(root) {
           <div class="chat-msgs" id="msgs"><div class="empty">Çocuk seçin</div></div>
           <div class="chat-compose">
             <input type="file" id="chat-file" accept="image/*" hidden />
-            <button class="btn btn-sm btn-outline" id="btn-img" title="Fotoğraf">📷</button>
-            <button class="btn btn-sm btn-outline" id="btn-loc" title="Konum">📍</button>
-            <input id="chat-input" placeholder="Mesaj yaz…" />
-            <button class="btn btn-sm btn-primary" id="btn-send">${t('send')}</button>
+            <button class="btn btn-sm btn-outline" id="btn-img" type="button">Foto</button>
+            <button class="btn btn-sm btn-outline" id="btn-loc" type="button">Konum</button>
+            <input id="chat-input" type="text" placeholder="Mesaj yaz…" />
+            <button class="btn btn-sm btn-primary" id="btn-send" type="button">${t('send')}</button>
           </div>
         </div>
       </div>
@@ -90,33 +90,12 @@ function renderThreads() {
     .map(
       (c) => `
     <button type="button" class="thread-item ${activeChildId === c.uid ? 'active' : ''}" data-id="${c.uid}">
-      <strong>${escapeHtml(c.name)}</strong>
-      <div class="meta" id="preview-${c.uid}">…</div>
+      ${escapeHtml(c.name)}
     </button>`,
     )
     .join('');
   el.querySelectorAll('.thread-item').forEach((b) => {
     b.onclick = () => selectChild(b.dataset.id);
-  });
-
-  // previews
-  const fid = auth.currentUser.uid;
-  children.forEach((c) => {
-    const qy = query(
-      collection(db, 'families', fid, 'chats', c.uid, 'messages'),
-      orderBy('createdAt', 'desc'),
-      limit(1),
-    );
-    getDocs(qy).then((snap) => {
-      const prev = document.getElementById(`preview-${c.uid}`);
-      if (!prev) return;
-      if (snap.empty) {
-        prev.textContent = 'Mesaj yok';
-        return;
-      }
-      const m = snap.docs[0].data();
-      prev.textContent = m.text || m.type || '';
-    });
   });
 }
 

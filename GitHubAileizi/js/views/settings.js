@@ -22,7 +22,6 @@ import {
   describeError,
   tsToDate,
 } from '../firebase-app.js';
-import { Brand } from '../config.js';
 import { t, setLang, getLang, fmtTime, toast, escapeHtml } from '../utils.js';
 
 let unsubs = [];
@@ -32,46 +31,45 @@ export function mountSettings(root) {
   root.innerHTML = `
     <div class="view">
       <div class="panel-title"><h2>${t('nav_settings')}</h2></div>
-      <div class="card" style="margin-bottom:12px">
+
+      <div class="row section">
         <h3>${escapeHtml(user?.displayName || 'Ebeveyn')}</h3>
         <div class="meta">${escapeHtml(user?.email || '')}</div>
-        <div class="row-actions" style="margin-top:12px">
-          <button class="btn btn-sm btn-outline" id="lang-tr">TR</button>
-          <button class="btn btn-sm btn-outline" id="lang-en">EN</button>
-          <button class="btn btn-sm btn-danger" id="btn-logout">${t('logout')}</button>
+        <div class="row-actions">
+          <button class="btn btn-sm btn-outline" id="lang-tr" type="button">TR</button>
+          <button class="btn btn-sm btn-outline" id="lang-en" type="button">EN</button>
+          <button class="btn btn-sm btn-outline" id="btn-logout" type="button">${t('logout')}</button>
         </div>
       </div>
 
-      <div class="card" style="margin-bottom:12px">
+      <div class="row section">
         <h3>Davet kodu</h3>
-        <p class="meta">Çocuk uygulaması veya web çocuk modu için 6 haneli kod (24 saat).</p>
-        <button class="btn btn-primary" id="btn-invite">${t('invite')}</button>
-        <div id="invite-code" style="font-size:2rem;font-weight:900;letter-spacing:.2em;margin:12px 0;color:var(--parent-primary)"></div>
-        <div class="card-list" id="active-invites"></div>
+        <p class="meta" style="margin:4px 0 10px">6 haneli kod, 24 saat geçerli.</p>
+        <button class="btn btn-primary" id="btn-invite" type="button">${t('invite')}</button>
+        <div id="invite-code" class="invite-code"></div>
+        <div class="list" id="active-invites"></div>
       </div>
 
-      <div class="card" style="margin-bottom:12px">
+      <div class="row section">
         <h3>${t('children')}</h3>
-        <div class="card-list" id="settings-children"></div>
+        <div class="list" id="settings-children" style="margin-top:8px"></div>
       </div>
 
-      <div class="card" style="margin-bottom:12px">
-        <h3>Dijital ebeveynlik</h3>
+      <div class="row section">
+        <h3>Ekran limiti</h3>
         <div class="field"><label>Çocuk</label><select id="pol-child"></select></div>
-        <div class="field"><label>Günlük ekran limiti (dk, boş=yok)</label><input id="pol-limit" type="number" min="0" /></div>
-        <div class="field"><label>Yatış başlangıç (HH:MM)</label><input id="pol-bed-start" placeholder="22:00" /></div>
-        <div class="field"><label>Yatış bitiş (HH:MM)</label><input id="pol-bed-end" placeholder="07:00" /></div>
-        <button class="btn btn-primary" id="pol-save">Politikayı kaydet</button>
+        <div class="field"><label>Günlük limit (dk)</label><input id="pol-limit" type="number" min="0" placeholder="Boş = yok" /></div>
+        <div class="field"><label>Yatış başlangıç</label><input id="pol-bed-start" placeholder="22:00" /></div>
+        <div class="field"><label>Yatış bitiş</label><input id="pol-bed-end" placeholder="07:00" /></div>
+        <button class="btn btn-primary" id="pol-save" type="button">Kaydet</button>
       </div>
 
-      <div class="card">
-        <h3>Şifre değiştir</h3>
-        <div class="field"><label>Mevcut şifre</label><input type="password" id="pw-cur" /></div>
-        <div class="field"><label>Yeni şifre</label><input type="password" id="pw-new" /></div>
-        <button class="btn btn-outline" id="pw-save">Güncelle</button>
+      <div class="row section">
+        <h3>Şifre</h3>
+        <div class="field"><label>Mevcut</label><input type="password" id="pw-cur" /></div>
+        <div class="field"><label>Yeni</label><input type="password" id="pw-new" /></div>
+        <button class="btn btn-outline" id="pw-save" type="button" style="width:100%">Güncelle</button>
       </div>
-
-      <p class="meta" style="margin-top:16px;text-align:center">${Brand.fullName} · Web PWA</p>
     </div>
   `;
 
@@ -137,13 +135,13 @@ export function mountSettings(root) {
         ? list
             .map(
               (i) => `
-          <div class="card" style="margin-top:8px">
-            <strong style="letter-spacing:.15em">${i.code}</strong>
+          <div class="row" style="margin-top:8px">
+            <strong class="invite-code" style="font-size:1.2rem;margin:0">${i.code}</strong>
             <div class="meta">bitiş: ${fmtTime(i.expiresAt)}</div>
             <div class="row-actions">
               <button class="btn btn-sm btn-outline" data-copy="${i.code}">Kopyala</button>
               <button class="btn btn-sm btn-outline" data-share="${i.code}">Paylaş</button>
-              <button class="btn btn-sm btn-danger" data-del-inv="${i.code}">Sil</button>
+              <button class="btn btn-sm btn-outline" data-del-inv="${i.code}">Sil</button>
             </div>
           </div>`,
             )
@@ -196,11 +194,11 @@ function renderChildren(list) {
   el.innerHTML = list
     .map(
       (c) => `
-    <div class="card">
+    <div class="row">
       <h3>${escapeHtml(c.name)}</h3>
       <div class="row-actions">
-        <button class="btn btn-sm btn-outline" data-rename="${c.uid}">Yeniden adlandır</button>
-        <button class="btn btn-sm btn-danger" data-remove="${c.uid}">Aileden çıkar</button>
+        <button class="btn btn-sm btn-outline" data-rename="${c.uid}">Ad</button>
+        <button class="btn btn-sm btn-outline" data-remove="${c.uid}">Çıkar</button>
       </div>
     </div>`,
     )

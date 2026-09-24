@@ -18,23 +18,22 @@ let map;
 let layer;
 let unsubFences;
 let unsubEvents;
-let children = [];
 let pendingCenter = null;
 let circlePreview;
 
 export function mountGeofence(root) {
   root.innerHTML = `
-    <div class="view">
-      <div class="panel-title">
-        <h2>${t('nav_geofence')}</h2>
-        <button class="btn btn-sm btn-primary" id="geo-add">Yeni bölge</button>
+    <div class="view geo-view">
+      <div class="map-bar">
+        <span style="font-weight:800;font-size:0.95rem;flex:1">${t('nav_geofence')}</span>
+        <button class="btn btn-sm btn-primary" id="geo-add" type="button">Ekle</button>
       </div>
       <div class="geo-layout">
         <div id="geofence-map"></div>
-        <div>
-          <div class="card-list" id="geo-list"></div>
-          <h3 style="margin:16px 0 8px">Son olaylar</h3>
-          <div class="card-list" id="geo-events"></div>
+        <div class="geo-side">
+          <div class="list" id="geo-list"></div>
+          <h3 style="margin:14px 0 8px;font-size:0.9rem">Son olaylar</h3>
+          <div class="list" id="geo-events"></div>
         </div>
       </div>
     </div>
@@ -53,24 +52,11 @@ export function mountGeofence(root) {
       radius: 200,
       color: '#2d6a4f',
     }).addTo(map);
-    toast('Merkez seçildi — “Yeni bölge” ile kaydedin');
+    toast('Merkez seçildi — Ekle’ye bas');
   });
 
   const fid = auth.currentUser?.uid;
   if (!fid) return;
-
-  onSnapshot(doc(db, 'families', fid), async (fam) => {
-    const ids = fam.data()?.childIds || [];
-    children = [];
-    for (const id of ids) {
-      try {
-        const u = await getDoc(doc(db, 'users', id));
-        children.push({ uid: id, name: u.data()?.name || id.slice(0, 6) });
-      } catch {
-        children.push({ uid: id, name: id.slice(0, 6) });
-      }
-    }
-  });
 
   unsubFences = onSnapshot(collection(db, 'families', fid, 'geofences'), (snap) => {
     layer.clearLayers();
@@ -99,14 +85,14 @@ export function mountGeofence(root) {
           (tsToDate(b.timestamp)?.getTime() || 0) -
           (tsToDate(a.timestamp)?.getTime() || 0),
       );
-      const recent = list.slice(0, 20);
+      const recent = list.slice(0, 15);
       const el = document.getElementById('geo-events');
       if (!el) return;
       el.innerHTML = recent.length
         ? recent
             .map(
               (e) => `
-          <div class="card">
+          <div class="row">
             <h3>${escapeHtml(e.childName || '')} — ${escapeHtml(e.fenceName || '')}</h3>
             <div class="meta"><span class="badge ${e.eventType === 'exit' ? 'warn' : ''}">${e.eventType || '?'}</span> ${fmtTime(tsToDate(e.timestamp))}</div>
           </div>`,
@@ -137,18 +123,18 @@ function renderFences(list) {
   const el = document.getElementById('geo-list');
   if (!el) return;
   if (!list.length) {
-    el.innerHTML = `<div class="empty">Bölge yok. Haritaya tıklayıp ekleyin.</div>`;
+    el.innerHTML = `<div class="empty">Haritaya tıkla, sonra Ekle</div>`;
     return;
   }
   el.innerHTML = list
     .map(
       (g) => `
-    <div class="card">
+    <div class="row">
       <h3>${escapeHtml(g.name || 'Bölge')}</h3>
-      <div class="meta">${Math.round(g.radiusMeters || 0)} m · ${g.notifyOnEnter !== false ? 'giriş' : ''} ${g.notifyOnExit !== false ? 'çıkış' : ''}</div>
+      <div class="meta">${Math.round(g.radiusMeters || 0)} m</div>
       <div class="row-actions">
-        <button class="btn btn-sm btn-outline" data-focus="${g.id}">Odakla</button>
-        <button class="btn btn-sm btn-danger" data-del="${g.id}">${t('delete')}</button>
+        <button class="btn btn-sm btn-outline" data-focus="${g.id}">Göster</button>
+        <button class="btn btn-sm btn-outline" data-del="${g.id}">${t('delete')}</button>
       </div>
     </div>`,
     )
@@ -176,7 +162,7 @@ function renderFences(list) {
 
 async function createFence() {
   if (!pendingCenter) {
-    toast('Önce haritaya tıklayarak merkez seçin', 'error');
+    toast('Önce haritaya tıkla', 'error');
     return;
   }
   const name = prompt('Bölge adı', 'Ev')?.trim();
@@ -193,7 +179,7 @@ async function createFence() {
       notifyOnEnter: true,
       notifyOnExit: true,
     });
-    toast('Bölge eklendi', 'success');
+    toast('Eklendi', 'success');
     pendingCenter = null;
     if (circlePreview) {
       map.removeLayer(circlePreview);

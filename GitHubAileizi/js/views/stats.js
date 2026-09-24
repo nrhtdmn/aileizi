@@ -5,7 +5,6 @@ import {
   getDoc,
   onSnapshot,
   dateKey,
-  tsToDate,
 } from '../firebase-app.js';
 import { t, escapeHtml, toast } from '../utils.js';
 
@@ -16,7 +15,7 @@ export function mountStats(root) {
   root.innerHTML = `
     <div class="view">
       <div class="panel-title"><h2>${t('nav_screen')}</h2></div>
-      <div class="card" style="margin-bottom:12px">
+      <div class="filters">
         <div class="field">
           <label>Çocuk</label>
           <select id="stats-child"></select>
@@ -25,10 +24,10 @@ export function mountStats(root) {
           <label>Tarih</label>
           <input type="date" id="stats-date" />
         </div>
-        <button class="btn btn-primary" id="stats-load">Yenile</button>
+        <button class="btn btn-primary" id="stats-load" type="button">Yenile</button>
       </div>
-      <div id="stats-series" class="card" style="margin-bottom:12px"></div>
-      <div class="card-list" id="stats-list"><div class="empty">${t('no_data')}</div></div>
+      <div id="stats-series" class="row section"></div>
+      <div class="list" id="stats-list"><div class="empty">${t('no_data')}</div></div>
     </div>
   `;
 
@@ -82,7 +81,7 @@ async function loadStats() {
         ? apps
             .map(
               (a) => `
-          <div class="card">
+          <div class="row">
             <h3>${escapeHtml(a.appName || a.packageName || '?')}</h3>
             <div class="meta">${a.totalTimeMinutes || 0} dk</div>
             <div class="stat-bar"><span style="width:${((a.totalTimeMinutes || 0) / max) * 100}%"></span></div>
@@ -92,7 +91,6 @@ async function loadStats() {
         : `<div class="empty">${t('no_data')}</div>`;
     }
 
-    // 7-day series
     const seriesEl = document.getElementById('stats-series');
     const now = new Date(date + 'T12:00:00');
     const bars = [];
@@ -113,11 +111,11 @@ async function loadStats() {
     const maxT = Math.max(1, ...bars.map((b) => b.total));
     seriesEl.innerHTML = `
       <h3 style="margin:0 0 10px">Son 7 gün</h3>
-      <div style="display:flex;align-items:flex-end;gap:6px;height:100px">
+      <div style="display:flex;align-items:flex-end;gap:6px;height:88px">
         ${bars
           .map(
             (b) =>
-              `<div title="${b.key}: ${b.total} dk" style="flex:1;background:var(--parent-accent);height:${(b.total / maxT) * 100}%;border-radius:6px 6px 2px 2px;min-height:4px"></div>`,
+              `<div title="${b.key}: ${b.total} dk" style="flex:1;background:var(--green-2);height:${Math.max(4, (b.total / maxT) * 100)}%;border-radius:4px 4px 1px 1px"></div>`,
           )
           .join('')}
       </div>

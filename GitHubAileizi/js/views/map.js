@@ -39,17 +39,21 @@ function familyId() {
 export function mountMap(root) {
   root.innerHTML = `
     <div class="view map-view">
-      <div class="map-toolbar">
-        <select id="map-child"></select>
-        <button class="btn btn-sm btn-outline" id="btn-history">24s iz</button>
-        <button class="btn btn-sm btn-outline" id="btn-follow">Takip</button>
-        <button class="btn btn-sm btn-outline" id="btn-draw">Rota çiz</button>
-        <button class="btn btn-sm btn-outline" id="btn-osrm">OSRM</button>
-        <button class="btn btn-sm btn-primary" id="btn-save-route" disabled>Rotayı kaydet</button>
-        <button class="btn btn-sm btn-outline" id="btn-clear-draft">Temizle</button>
+      <div class="map-bar">
+        <select id="map-child" aria-label="Çocuk"></select>
+        <div class="map-actions">
+          <button class="btn btn-sm btn-outline" id="btn-follow" title="Takip">Takip</button>
+          <button class="btn btn-sm btn-outline" id="btn-history" title="24 saat iz">İz</button>
+          <button class="btn btn-sm btn-outline" id="btn-route-toggle">Rota</button>
+        </div>
       </div>
-      <div class="child-chip-bar" id="child-chips"></div>
-      <p class="route-draw-hint" id="draw-hint"></p>
+      <div class="route-panel" id="route-panel">
+        <p class="hint" id="draw-hint">Haritaya dokunarak nokta ekle.</p>
+        <button class="btn btn-sm btn-outline" id="btn-draw">Çiz</button>
+        <button class="btn btn-sm btn-outline" id="btn-osrm">Yol bul</button>
+        <button class="btn btn-sm btn-outline" id="btn-clear-draft">Temizle</button>
+        <button class="btn btn-sm btn-primary" id="btn-save-route" disabled>Kaydet</button>
+      </div>
       <div id="map"></div>
     </div>
   `;
@@ -124,8 +128,13 @@ export function mountMap(root) {
   root.querySelector('#btn-history').onclick = () => loadHistory();
   root.querySelector('#btn-follow').onclick = (e) => {
     follow = !follow;
-    e.target.classList.toggle('btn-primary', follow);
-    e.target.classList.toggle('btn-outline', !follow);
+    e.target.classList.toggle('is-on', follow);
+  };
+  root.querySelector('#btn-route-toggle').onclick = (e) => {
+    const panel = root.querySelector('#route-panel');
+    const open = panel.classList.toggle('open');
+    e.target.classList.toggle('is-on', open);
+    setTimeout(() => map?.invalidateSize(), 50);
   };
   root.querySelector('#btn-draw').onclick = (e) => {
     drawMode = !drawMode;
@@ -134,10 +143,10 @@ export function mountMap(root) {
       map.removeLayer(draftPolyline);
       draftPolyline = null;
     }
-    e.target.classList.toggle('btn-primary', drawMode);
+    e.target.classList.toggle('is-on', drawMode);
     root.querySelector('#draw-hint').textContent = drawMode
-      ? 'Haritaya dokunarak rota noktaları ekleyin.'
-      : '';
+      ? 'Haritaya dokunarak nokta ekle, sonra Kaydet.'
+      : 'Haritaya dokunarak nokta ekle.';
     root.querySelector('#btn-save-route').disabled = true;
   };
   root.querySelector('#btn-osrm').onclick = () => autoRoute();
@@ -152,7 +161,6 @@ export function mountMap(root) {
   root.querySelector('#btn-save-route').onclick = () => saveRoute();
   root.querySelector('#map-child').onchange = (e) => {
     selectedChildId = e.target.value || null;
-    highlightChip();
   };
 
   map.on('click', (ev) => {
@@ -166,8 +174,7 @@ export function mountMap(root) {
 
 function renderChildSelect() {
   const sel = document.getElementById('map-child');
-  const chips = document.getElementById('child-chips');
-  if (!sel || !chips) return;
+  if (!sel) return;
   sel.innerHTML =
     `<option value="">Tüm çocuklar</option>` +
     children
@@ -176,25 +183,6 @@ function renderChildSelect() {
           `<option value="${c.uid}" ${selectedChildId === c.uid ? 'selected' : ''}>${escapeHtml(c.name)}</option>`,
       )
       .join('');
-  chips.innerHTML = children
-    .map(
-      (c) =>
-        `<button type="button" class="child-chip ${selectedChildId === c.uid ? 'active' : ''}" data-id="${c.uid}">${escapeHtml(c.name)}</button>`,
-    )
-    .join('');
-  chips.querySelectorAll('.child-chip').forEach((btn) => {
-    btn.onclick = () => {
-      selectedChildId = btn.dataset.id;
-      sel.value = selectedChildId;
-      highlightChip();
-    };
-  });
-}
-
-function highlightChip() {
-  document.querySelectorAll('#child-chips .child-chip').forEach((b) => {
-    b.classList.toggle('active', b.dataset.id === selectedChildId);
-  });
 }
 
 function refreshDraft() {
