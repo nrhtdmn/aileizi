@@ -554,26 +554,43 @@ a {
   color: var(--green);
 }
 
-.route-panel {
+.tools-panel {
   display: none;
-  gap: 6px;
-  padding: 8px 10px;
+  flex-direction: column;
+  gap: 12px;
+  padding: 10px 12px 12px;
   background: #fafbfa;
   border-bottom: 1px solid var(--line);
-  flex-wrap: wrap;
-  align-items: center;
+  max-height: 42vh;
+  overflow: auto;
 }
 
-.route-panel.open {
+.tools-panel.open {
   display: flex;
 }
 
-.route-panel .hint {
-  flex: 1 1 100%;
-  margin: 0;
+.tools-section h4 {
+  margin: 0 0 4px;
+  font-size: 0.9rem;
+  font-weight: 800;
+  color: var(--green);
+}
+
+.tools-section .hint {
+  margin: 0 0 8px;
   font-size: 0.78rem;
   color: var(--muted);
   font-weight: 600;
+}
+
+.tools-section select {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin-bottom: 8px;
+  background: #fff;
+  font-weight: 700;
 }
 
 .bottom-nav {

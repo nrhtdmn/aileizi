@@ -26,7 +26,7 @@ import {
   unmountChild,
 } from './views/child.js';
 import { startParentAlerts, stopParentAlerts } from './alerts.js';
-import { setKeepAwake } from './keep-awake.js';
+import { setKeepAwake, clearKeepAwake } from './keep-awake.js';
 
 const app = document.getElementById('app');
 let currentTab = 0;
@@ -122,7 +122,7 @@ function cleanup() {
   unmountSettings();
   unmountChild();
   stopParentAlerts();
-  setKeepAwake(false);
+  clearKeepAwake();
 }
 
 function renderParentAuth() {
@@ -287,7 +287,7 @@ function renderParentShell() {
     shell?.classList.toggle('chrome-hidden', chromeHidden);
     showFab?.classList.toggle('hidden', !chromeHidden);
     if (hideBtn) hideBtn.textContent = chromeHidden ? 'Göster' : 'Gizle';
-    setKeepAwake(chromeHidden);
+    setKeepAwake('chrome', chromeHidden);
     // Map needs resize after chrome toggle
     setTimeout(() => window.dispatchEvent(new Event('resize')), 80);
   };

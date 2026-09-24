@@ -1,30 +1,27 @@
-/** Keep screen on while map focus (Gizle) mode is active */
+/** Keep screen on while any reason is active (Gizle / Takip) */
 let wakeLock = null;
-let wantLock = false;
 let dummyVideo = null;
+const reasons = new Set();
 
 async function requestLock() {
-  if (!wantLock) return;
+  if (!reasons.size) return;
   try {
     if ('wakeLock' in navigator) {
       wakeLock = await navigator.wakeLock.request('screen');
       wakeLock.addEventListener('release', () => {
-        if (wantLock) setTimeout(() => requestLock(), 500);
+        if (reasons.size) setTimeout(() => requestLock(), 400);
       });
       return;
     }
   } catch (_) {}
-  // Fallback: silent looping video (older browsers)
   try {
     if (!dummyVideo) {
       dummyVideo = document.createElement('video');
       dummyVideo.setAttribute('playsinline', '');
-      dummyVideo.setAttribute('muted', '');
       dummyVideo.muted = true;
       dummyVideo.loop = true;
       dummyVideo.style.cssText =
         'position:fixed;width:1px;height:1px;opacity:0;pointer-events:none;bottom:0;left:0';
-      // tiny transparent webm data is heavy; use canvas stream instead
       const c = document.createElement('canvas');
       c.width = 2;
       c.height = 2;
@@ -50,16 +47,32 @@ async function releaseLock() {
   } catch (_) {}
 }
 
-document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible' && wantLock) requestLock();
-});
-
-export function setKeepAwake(on) {
-  wantLock = !!on;
-  if (on) requestLock();
+function sync() {
+  if (reasons.size) requestLock();
   else releaseLock();
 }
 
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && reasons.size) requestLock();
+});
+
+/** @param {string} reason @param {boolean} on */
+export function setKeepAwake(reason, on) {
+  if (typeof reason === 'boolean') {
+    // backward compat: setKeepAwake(true/false) → 'ui'
+    on = reason;
+    reason = 'ui';
+  }
+  if (on) reasons.add(reason || 'ui');
+  else reasons.delete(reason || 'ui');
+  sync();
+}
+
 export function isKeepAwake() {
-  return wantLock;
+  return reasons.size > 0;
+}
+
+export function clearKeepAwake() {
+  reasons.clear();
+  sync();
 }
