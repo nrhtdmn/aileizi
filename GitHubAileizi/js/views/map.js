@@ -506,6 +506,7 @@ async function addSafeZoneFromMap() {
       childIds: selectedChildId ? [selectedChildId] : [],
       notifyOnEnter: true,
       notifyOnExit: true,
+      createdAt: serverTimestamp(),
     });
     toast('Güvenli bölge eklendi', 'success');
     pendingFence = null;

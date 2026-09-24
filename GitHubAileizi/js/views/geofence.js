@@ -9,6 +9,7 @@ import {
   deleteDoc,
   getDoc,
   ensureParentProfile,
+  serverTimestamp,
   tsToDate,
 } from '../firebase-app.js';
 import { DEFAULT_MAP } from '../config.js';
@@ -328,6 +329,7 @@ async function createFence() {
       childIds: [],
       notifyOnEnter: true,
       notifyOnExit: true,
+      createdAt: serverTimestamp(),
     });
     toast('Bölge eklendi', 'success');
     pendingCenter = null;
