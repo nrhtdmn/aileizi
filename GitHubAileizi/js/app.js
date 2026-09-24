@@ -243,7 +243,6 @@ function renderParentShell() {
           <img src="./assets/logo.png" alt="" class="topbar-logo" width="36" height="36" />
           <div class="topbar-titles">
             <h2>${Brand.name}</h2>
-            <div class="sub">${t('parent')}</div>
           </div>
           <select id="top-child" class="top-child-select" aria-label="Çocuk">
             <option value="">Tüm çocuklar</option>
