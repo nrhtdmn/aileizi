@@ -23,11 +23,14 @@ import {
   tsToDate,
 } from '../firebase-app.js';
 import { t, setLang, getLang, fmtTime, toast, escapeHtml } from '../utils.js';
+import { getAlertPrefs, setAlertPrefs } from '../alerts.js';
 
 let unsubs = [];
 
 export function mountSettings(root) {
   const user = auth.currentUser;
+  const prefs = getAlertPrefs();
+
   root.innerHTML = `
     <div class="view">
       <div class="panel-title"><h2>${t('nav_settings')}</h2></div>
@@ -43,6 +46,18 @@ export function mountSettings(root) {
       </div>
 
       <div class="row section">
+        <h3>Anlık bildirimler</h3>
+        <p class="meta" style="margin:4px 0 10px">SOS, mesaj, bölge ve rota uyarıları. Tarayıcı izni gerekir.</p>
+        <label class="check-row"><input type="checkbox" id="pref-sos" ${prefs.sos ? 'checked' : ''}/> SOS</label>
+        <label class="check-row"><input type="checkbox" id="pref-chat" ${prefs.chat ? 'checked' : ''}/> Mesajlar</label>
+        <label class="check-row"><input type="checkbox" id="pref-geo" ${prefs.geofence ? 'checked' : ''}/> Bölge giriş/çıkış</label>
+        <label class="check-row"><input type="checkbox" id="pref-route" ${prefs.route ? 'checked' : ''}/> Rota sapması</label>
+        <label class="check-row"><input type="checkbox" id="pref-bat" ${prefs.batteryLow ? 'checked' : ''}/> Düşük pil</label>
+        <label class="check-row"><input type="checkbox" id="pref-sound" ${prefs.sound ? 'checked' : ''}/> Ses</label>
+        <button class="btn btn-primary" id="btn-notif" type="button" style="margin-top:10px">Bildirim izni iste</button>
+      </div>
+
+      <div class="row section">
         <h3>Davet kodu</h3>
         <p class="meta" style="margin:4px 0 10px">6 haneli kod, 24 saat geçerli.</p>
         <button class="btn btn-primary" id="btn-invite" type="button">${t('invite')}</button>
@@ -55,13 +70,20 @@ export function mountSettings(root) {
         <div class="list" id="settings-children" style="margin-top:8px"></div>
       </div>
 
+      <div class="row section" id="health-panel">
+        <h3>Sağlık özeti</h3>
+        <p class="meta" style="margin:4px 0 8px">Son görülme ve konum paylaşımı durumu.</p>
+        <div class="list" id="health-list"><div class="empty">Yükleniyor…</div></div>
+      </div>
+
       <div class="row section">
-        <h3>Ekran limiti</h3>
-        <div class="field"><label>Çocuk</label><select id="pol-child"></select></div>
-        <div class="field"><label>Günlük limit (dk)</label><input id="pol-limit" type="number" min="0" placeholder="Boş = yok" /></div>
-        <div class="field"><label>Yatış başlangıç</label><input id="pol-bed-start" placeholder="22:00" /></div>
-        <div class="field"><label>Yatış bitiş</label><input id="pol-bed-end" placeholder="07:00" /></div>
-        <button class="btn btn-primary" id="pol-save" type="button">Kaydet</button>
+        <h3>İpuçları</h3>
+        <ul class="tips">
+          <li>Çocuk uygulamasını arka planda açık tut — konum ve SOS için.</li>
+          <li>Ev / okul için güvenli bölge ekle; Ayar’dan giriş-çıkış bildirimini aç.</li>
+          <li>Okul yolu için rota çiz; sapma eşiğini Rotalar’dan ayarla.</li>
+          <li>Bu sekmeyi açık bırakırsan bildirimler anında gelir.</li>
+        </ul>
       </div>
 
       <div class="row section">
@@ -73,14 +95,40 @@ export function mountSettings(root) {
     </div>
   `;
 
+  const bindPref = (id, key) => {
+    root.querySelector(id).onchange = (e) => {
+      setAlertPrefs({ [key]: e.target.checked });
+      toast('Kaydedildi', 'success');
+    };
+  };
+  bindPref('#pref-sos', 'sos');
+  bindPref('#pref-chat', 'chat');
+  bindPref('#pref-geo', 'geofence');
+  bindPref('#pref-route', 'route');
+  bindPref('#pref-bat', 'batteryLow');
+  bindPref('#pref-sound', 'sound');
+
+  root.querySelector('#btn-notif').onclick = async () => {
+    if (!('Notification' in window)) {
+      toast('Bu tarayıcı bildirim desteklemiyor', 'error');
+      return;
+    }
+    const r = await Notification.requestPermission();
+    toast(r === 'granted' ? 'Bildirimler açık' : 'İzin verilmedi', r === 'granted' ? 'success' : 'error');
+    if (r === 'granted') {
+      new Notification('Aileİzi', {
+        body: 'Bildirimler hazır',
+        icon: './assets/icons/icon-192.png',
+      });
+    }
+  };
+
   root.querySelector('#lang-tr').onclick = () => {
     setLang('tr');
-    toast('Türkçe');
     location.reload();
   };
   root.querySelector('#lang-en').onclick = () => {
     setLang('en');
-    toast('English');
     location.reload();
   };
   root.querySelector('#btn-logout').onclick = async () => {
@@ -88,8 +136,6 @@ export function mountSettings(root) {
   };
   root.querySelector('#btn-invite').onclick = () => createInvite();
   root.querySelector('#pw-save').onclick = () => changePw();
-  root.querySelector('#pol-save').onclick = () => savePolicies();
-  root.querySelector('#pol-child').onchange = () => loadPolicies();
 
   const fid = user.uid;
   const u1 = onSnapshot(doc(db, 'families', fid), async (fam) => {
@@ -98,17 +144,17 @@ export function mountSettings(root) {
     for (const id of ids) {
       try {
         const u = await getDoc(doc(db, 'users', id));
-        list.push({ uid: id, name: u.data()?.name || id.slice(0, 6) });
+        list.push({
+          uid: id,
+          name: u.data()?.name || id.slice(0, 6),
+          sharing: u.data()?.locationSharingEnabled !== false,
+        });
       } catch {
-        list.push({ uid: id, name: id.slice(0, 6) });
+        list.push({ uid: id, name: id.slice(0, 6), sharing: true });
       }
     }
     renderChildren(list);
-    const sel = document.getElementById('pol-child');
-    sel.innerHTML = list
-      .map((c) => `<option value="${c.uid}">${escapeHtml(c.name)}</option>`)
-      .join('');
-    if (list[0]) loadPolicies();
+    renderHealth(fid, list);
   });
   unsubs.push(u1);
 
@@ -180,8 +226,37 @@ export function mountSettings(root) {
   );
   unsubs.push(u2);
 
-  // highlight lang
   document.getElementById(getLang() === 'en' ? 'lang-en' : 'lang-tr')?.classList.add('btn-primary');
+}
+
+async function renderHealth(fid, list) {
+  const el = document.getElementById('health-list');
+  if (!el) return;
+  if (!list.length) {
+    el.innerHTML = `<div class="empty">Çocuk yok</div>`;
+    return;
+  }
+  const rows = [];
+  for (const c of list) {
+    let last = '—';
+    let bat = '—';
+    let online = false;
+    try {
+      const st = await getDoc(doc(db, 'families', fid, 'device_status', c.uid));
+      if (st.exists()) {
+        const d = st.data();
+        last = fmtTime(tsToDate(d.lastSeen));
+        bat = d.batteryLevel != null ? `%${d.batteryLevel}` : '—';
+        online = d.isOnline === true;
+      }
+    } catch (_) {}
+    rows.push(`
+      <div class="row">
+        <h3>${escapeHtml(c.name)} <span class="badge ${online ? '' : 'warn'}">${online ? 'Çevrimiçi' : 'Çevrimdışı'}</span></h3>
+        <div class="meta">Son görülme: ${last} · Pil: ${bat} · Konum: ${c.sharing ? 'açık' : 'kapalı'}</div>
+      </div>`);
+  }
+  el.innerHTML = rows.join('');
 }
 
 function renderChildren(list) {
@@ -222,7 +297,7 @@ function renderChildren(list) {
   });
   el.querySelectorAll('[data-remove]').forEach((b) => {
     b.onclick = async () => {
-      if (!confirm('Çocuk aileden çıkarılsın mı?')) return;
+      if (!confirm('Çocuk aileden çıkarılsın mı? Konum kayıtları da silinir.')) return;
       const childId = b.dataset.remove;
       const fid = auth.currentUser.uid;
       try {
@@ -237,6 +312,12 @@ function renderChildren(list) {
             locationSharingEnabled: false,
             updatedAt: serverTimestamp(),
           });
+        } catch (_) {}
+        try {
+          await deleteDoc(doc(db, 'families', fid, 'locations', childId));
+        } catch (_) {}
+        try {
+          await deleteDoc(doc(db, 'families', fid, 'device_status', childId));
         } catch (_) {}
         toast('Çıkarıldı', 'success');
       } catch (e) {
@@ -260,14 +341,6 @@ async function createInvite() {
     const el = document.getElementById('invite-code');
     if (el) el.textContent = code;
     toast('Davet kodu oluşturuldu', 'success');
-    if (navigator.share) {
-      try {
-        await navigator.share({
-          title: 'Aileİzi',
-          text: `Aileİzi davet kodu: ${code}`,
-        });
-      } catch (_) {}
-    }
   } catch (e) {
     toast(describeError(e), 'error');
   }
@@ -286,43 +359,6 @@ async function changePw() {
     await reauthenticateWithCredential(user, cred);
     await updatePassword(user, neu);
     toast('Şifre güncellendi', 'success');
-  } catch (e) {
-    toast(describeError(e), 'error');
-  }
-}
-
-async function loadPolicies() {
-  const childId = document.getElementById('pol-child')?.value;
-  if (!childId) return;
-  try {
-    const snap = await getDoc(
-      doc(db, 'families', auth.currentUser.uid, 'child_policies', childId),
-    );
-    const p = snap.data() || {};
-    document.getElementById('pol-limit').value = p.dailyScreenLimitMinutes ?? '';
-    document.getElementById('pol-bed-start').value = p.bedTimeStart || '';
-    document.getElementById('pol-bed-end').value = p.bedTimeEnd || '';
-  } catch (_) {}
-}
-
-async function savePolicies() {
-  const childId = document.getElementById('pol-child')?.value;
-  if (!childId) return;
-  const limitRaw = document.getElementById('pol-limit').value;
-  try {
-    await ensureParentProfile(auth.currentUser);
-    await setDoc(
-      doc(db, 'families', auth.currentUser.uid, 'child_policies', childId),
-      {
-        childId,
-        dailyScreenLimitMinutes: limitRaw === '' ? null : Number(limitRaw),
-        bedTimeStart: document.getElementById('pol-bed-start').value.trim() || null,
-        bedTimeEnd: document.getElementById('pol-bed-end').value.trim() || null,
-        updatedAt: serverTimestamp(),
-      },
-      { merge: true },
-    );
-    toast('Politika kaydedildi', 'success');
   } catch (e) {
     toast(describeError(e), 'error');
   }

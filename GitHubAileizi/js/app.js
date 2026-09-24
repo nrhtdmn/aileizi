@@ -16,7 +16,7 @@ import { t, setLang, getLang, toast } from './utils.js';
 import { mountMap, unmountMap, focusMapOn } from './views/map.js';
 import { mountSos, unmountSos } from './views/sos.js';
 import { mountMessages, unmountMessages } from './views/messages.js';
-import { mountStats, unmountStats } from './views/stats.js';
+import { mountRoutes, unmountRoutes } from './views/routes.js';
 import { mountGeofence, unmountGeofence } from './views/geofence.js';
 import { mountSettings, unmountSettings } from './views/settings.js';
 import {
@@ -25,6 +25,7 @@ import {
   resolveChildSession,
   unmountChild,
 } from './views/child.js';
+import { startParentAlerts, stopParentAlerts } from './alerts.js';
 
 const app = document.getElementById('app');
 let currentTab = 0;
@@ -35,7 +36,7 @@ const NAV = [
   { id: 'map', label: 'nav_map', ico: 'H' },
   { id: 'sos', label: 'nav_sos', ico: 'S' },
   { id: 'messages', label: 'nav_messages', ico: 'M' },
-  { id: 'screen', label: 'nav_screen', ico: 'E' },
+  { id: 'routes', label: 'nav_routes', ico: 'R' },
   { id: 'geofence', label: 'nav_geofence', ico: 'B' },
   { id: 'settings', label: 'nav_settings', ico: 'A' },
 ];
@@ -96,6 +97,15 @@ onAuthStateChanged(auth, async (user) => {
     Notification.requestPermission().catch(() => {});
   }
 
+  startParentAlerts().catch(() => {});
+  window.__aileiziGoTab = (i) => {
+    currentTab = i;
+    document
+      .querySelectorAll('#bottom-nav button')
+      .forEach((b) => b.classList.toggle('active', Number(b.dataset.i) === i));
+    showTab(i);
+  };
+
   renderParentShell();
 });
 
@@ -105,10 +115,11 @@ function cleanup() {
   unmountMap();
   unmountSos();
   unmountMessages();
-  unmountStats();
+  unmountRoutes();
   unmountGeofence();
   unmountSettings();
   unmountChild();
+  stopParentAlerts();
 }
 
 function renderParentAuth() {
@@ -293,7 +304,7 @@ function showTab(i) {
   unmountMap();
   unmountSos();
   unmountMessages();
-  unmountStats();
+  unmountRoutes();
   unmountGeofence();
   unmountSettings();
 
@@ -322,8 +333,8 @@ function showTab(i) {
       unmountCurrent = unmountMessages;
       break;
     case 3:
-      mountStats(root);
-      unmountCurrent = unmountStats;
+      mountRoutes(root);
+      unmountCurrent = unmountRoutes;
       break;
     case 4:
       mountGeofence(root);

@@ -888,6 +888,11 @@ a {
   background: var(--green-2);
 }
 
+.view.map-view #geofence-map {
+  flex: 1;
+  min-height: 220px;
+}
+
 .invite-code {
   font-size: 1.8rem;
   font-weight: 900;
@@ -896,6 +901,41 @@ a {
   color: var(--green);
   margin: 10px 0;
   font-variant-numeric: tabular-nums;
+}
+
+.map-manage {
+  max-height: 36%;
+  overflow: auto;
+  background: var(--bg);
+  border-top: 1px solid var(--line);
+}
+
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 700;
+  font-size: 0.9rem;
+  padding: 6px 0;
+  color: var(--text);
+}
+
+.check-row input {
+  width: 18px;
+  height: 18px;
+}
+
+.tips {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 0.86rem;
+  line-height: 1.45;
+}
+
+.tips li {
+  margin-bottom: 6px;
 }
 
 .section {

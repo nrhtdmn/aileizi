@@ -1,5 +1,5 @@
 /* Aileİzi PWA — offline shell cache */
-const CACHE = 'aileizi-v4';
+const CACHE = 'aileizi-v5';
 const ASSETS = [
   './',
   './index.html',
@@ -8,9 +8,11 @@ const ASSETS = [
   './js/config.js',
   './js/firebase-app.js',
   './js/utils.js',
+  './js/alerts.js',
   './js/views/map.js',
   './js/views/sos.js',
   './js/views/messages.js',
+  './js/views/routes.js',
   './js/views/stats.js',
   './js/views/geofence.js',
   './js/views/settings.js',

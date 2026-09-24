@@ -11,6 +11,7 @@ import {
   orderBy,
   Timestamp,
   addDoc,
+  deleteDoc,
   serverTimestamp,
   ensureParentProfile,
   tsToDate,
@@ -30,6 +31,7 @@ let unsubLoc;
 let unsubStatus;
 let unsubRoutes;
 let children = [];
+let activeChildIds = new Set();
 let selectedChildId = null;
 let drawMode = false;
 let draftPoints = [];
@@ -163,6 +165,7 @@ export function mountMap(root) {
     doc(db, 'families', fid),
     async (fam) => {
       const ids = fam.data()?.childIds || [];
+      activeChildIds = new Set(ids);
       children = [];
       for (const id of ids) {
         try {
@@ -171,6 +174,28 @@ export function mountMap(root) {
         } catch {
           children.push({ uid: id, name: id.slice(0, 6) });
         }
+      }
+      // Drop markers for removed children + delete orphan Firestore location docs
+      for (const id of [...locByChild.keys()]) {
+        if (!activeChildIds.has(id)) locByChild.delete(id);
+      }
+      // Clean stale location / device_status docs for removed children
+      try {
+        const locSnap = await getDocs(collection(db, 'families', fid, 'locations'));
+        for (const d of locSnap.docs) {
+          if (!activeChildIds.has(d.id)) {
+            deleteDoc(d.ref).catch(() => {});
+          }
+        }
+        const stSnap = await getDocs(collection(db, 'families', fid, 'device_status'));
+        for (const d of stSnap.docs) {
+          if (!activeChildIds.has(d.id)) {
+            deleteDoc(d.ref).catch(() => {});
+          }
+        }
+      } catch (_) {}
+      if (selectedChildId && !activeChildIds.has(selectedChildId)) {
+        selectedChildId = null;
       }
       renderChildSelect();
       renderMarkers();
@@ -186,13 +211,17 @@ export function mountMap(root) {
     collection(db, 'families', fid, 'locations'),
     (snap) => {
       snap.forEach((d) => {
+        // Only keep locations for current family children
+        if (activeChildIds.size && !activeChildIds.has(d.id)) return;
         const m = d.data() || {};
         locByChild.set(d.id, { ...m, _src: 'locations', childId: d.id });
       });
-      // remove loc entries that disappeared
-      const ids = new Set(snap.docs.map((d) => d.id));
+      const ids = new Set(
+        snap.docs.map((d) => d.id).filter((id) => !activeChildIds.size || activeChildIds.has(id)),
+      );
       for (const [id, v] of locByChild) {
         if (v._src === 'locations' && !ids.has(id)) locByChild.delete(id);
+        if (activeChildIds.size && !activeChildIds.has(id)) locByChild.delete(id);
       }
       renderMarkers();
     },
@@ -208,6 +237,7 @@ export function mountMap(root) {
     collection(db, 'families', fid, 'device_status'),
     (snap) => {
       snap.forEach((d) => {
+        if (activeChildIds.size && !activeChildIds.has(d.id)) return;
         const m = d.data() || {};
         const existing = locByChild.get(d.id);
         const lat = asNum(m.latitude);
@@ -228,6 +258,9 @@ export function mountMap(root) {
           });
         }
       });
+      for (const id of [...locByChild.keys()]) {
+        if (activeChildIds.size && !activeChildIds.has(id)) locByChild.delete(id);
+      }
       renderMarkers();
     },
     () => {},
@@ -332,6 +365,7 @@ function renderMarkers() {
   const pts = [];
 
   for (const [id, m] of locByChild) {
+    if (activeChildIds.size && !activeChildIds.has(id)) continue;
     if (selectedChildId && id !== selectedChildId) continue;
 
     const lat = asNum(m.latitude);
