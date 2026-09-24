@@ -25,6 +25,7 @@ let markersLayer;
 let historyLayer;
 let routesLayer;
 let fencesLayer;
+let placesLayer;
 let streetLayer;
 let hybridBase;
 let hybridLabels;
@@ -33,6 +34,7 @@ let unsubLoc;
 let unsubStatus;
 let unsubRoutes;
 let unsubFences;
+let unsubPlaces;
 let children = [];
 let activeChildIds = new Set();
 let selectedChildId = null;
@@ -85,6 +87,26 @@ function childMarkerIcon(name, online) {
     iconAnchor: [20, 46],
     popupAnchor: [0, -40],
   });
+}
+
+function mapNameLabel(latlng, text, color = '#2d6a4f') {
+  const label = escapeHtml(String(text || '').trim() || '—');
+  return L.marker(latlng, {
+    icon: L.divIcon({
+      className: 'map-name-label-wrap',
+      html: `<span class="map-name-label" style="--label:${color}">${label}</span>`,
+      iconSize: [0, 0],
+      iconAnchor: [0, 0],
+    }),
+    interactive: false,
+    keyboard: false,
+    zIndexOffset: 200,
+  });
+}
+
+function pathMid(pts) {
+  if (!pts?.length) return null;
+  return pts[Math.floor((pts.length - 1) / 2)];
 }
 
 function applyMapMode() {
@@ -229,6 +251,7 @@ export function mountMap(root) {
   routesLayer = L.layerGroup().addTo(map);
   fencesLayer = L.layerGroup();
   if (showFences) fencesLayer.addTo(map);
+  placesLayer = L.layerGroup().addTo(map);
   highlightLayer = L.layerGroup().addTo(map);
   syncFenceToggleBtn();
 
@@ -357,10 +380,12 @@ export function mountMap(root) {
         .map((p) => [asNum(p.latitude), asNum(p.longitude)])
         .filter((p) => p[0] != null && p[1] != null);
       if (pts.length < 2) return;
-      const color = r.isDeviated ? '#c62828' : r.active ? '#2d6a4f' : '#889';
+      const color = r.isDeviated ? '#c62828' : r.active !== false && !r.cancelledAt ? '#2d6a4f' : '#889';
       L.polyline(pts, { color, weight: 4, opacity: 0.9 })
-        .bindPopup(`${escapeHtml(r.name || 'Rota')} ${r.active ? '(aktif)' : ''}`)
+        .bindPopup(`${escapeHtml(r.name || 'Rota')} ${r.active !== false && !r.cancelledAt ? '(aktif)' : ''}`)
         .addTo(routesLayer);
+      const mid = pathMid(pts);
+      if (mid) mapNameLabel(mid, r.name || 'Rota', color).addTo(routesLayer);
     });
   });
 
@@ -368,6 +393,27 @@ export function mountMap(root) {
     fencesCache = [];
     snap.forEach((d) => fencesCache.push({ id: d.id, ...d.data() }));
     renderFencesOnMap();
+  });
+
+  unsubPlaces = onSnapshot(collection(db, 'families', fid, 'places'), (snap) => {
+    if (!placesLayer) return;
+    placesLayer.clearLayers();
+    snap.forEach((d) => {
+      const p = d.data();
+      const lat = asNum(p.latitude);
+      const lng = asNum(p.longitude);
+      if (lat == null || lng == null) return;
+      L.circleMarker([lat, lng], {
+        radius: 8,
+        color: '#fff',
+        weight: 2,
+        fillColor: '#c62828',
+        fillOpacity: 1,
+      })
+        .bindPopup(`<strong>${escapeHtml(p.name || 'Konum')}</strong>`)
+        .addTo(placesLayer);
+      mapNameLabel([lat, lng], p.name || 'Konum', '#c62828').addTo(placesLayer);
+    });
   });
 
   root.querySelector('#btn-map-type').onclick = () => {
@@ -596,6 +642,7 @@ function renderFencesOnMap() {
         `<strong>${escapeHtml(g.name || 'Bölge')}</strong><br>${Math.round(radius)} m`,
       )
       .addTo(fencesLayer);
+    mapNameLabel([lat, lng], g.name || 'Bölge', color).addTo(fencesLayer);
   });
 }
 
@@ -1024,12 +1071,14 @@ export function unmountMap() {
   if (unsubStatus) unsubStatus();
   if (unsubRoutes) unsubRoutes();
   if (unsubFences) unsubFences();
-  unsubFam = unsubLoc = unsubStatus = unsubRoutes = unsubFences = null;
+  if (unsubPlaces) unsubPlaces();
+  unsubFam = unsubLoc = unsubStatus = unsubRoutes = unsubFences = unsubPlaces = null;
   locByChild.clear();
   fencesCache = [];
   pendingFence = null;
   fencePreview = null;
   fencesLayer = null;
+  placesLayer = null;
   const roots = document.querySelectorAll('.map-view');
   roots.forEach((r) => {
     if (r._onResize) window.removeEventListener('resize', r._onResize);
@@ -1082,8 +1131,8 @@ function applyShowRecord(record) {
       fillOpacity: 1,
     })
       .bindPopup(`<strong>${name}</strong>`)
-      .addTo(highlightLayer)
-      .openPopup();
+      .addTo(highlightLayer);
+    mapNameLabel([lat, lng], record.name || 'Konum', '#c62828').addTo(highlightLayer);
     map.setView([lat, lng], 16);
     setStatus(`Konum: ${record.name || 'Konum'}`);
     return;
@@ -1114,8 +1163,8 @@ function applyShowRecord(record) {
       fillColor: color,
       fillOpacity: 1,
     }).addTo(highlightLayer);
+    mapNameLabel([lat, lng], record.name || 'Bölge', color).addTo(highlightLayer);
     map.fitBounds(circle.getBounds().pad(0.25), { maxZoom: 17 });
-    circle.openPopup();
     setStatus(`Bölge: ${record.name || 'Bölge'}`);
     return;
   }
@@ -1154,6 +1203,12 @@ function applyShowRecord(record) {
     })
       .bindPopup('Son')
       .addTo(highlightLayer);
+    const mid = pathMid(pts);
+    if (mid) {
+      mapNameLabel(mid, record.name || (type === 'trail' ? 'İz' : 'Rota'), color).addTo(
+        highlightLayer,
+      );
+    }
     if (pts.length >= 2) {
       map.fitBounds(pts, { padding: [40, 40], maxZoom: 17 });
     } else {

@@ -531,6 +531,30 @@ a {
   border-radius: 2px;
 }
 
+.map-name-label-wrap {
+  background: transparent !important;
+  border: 0 !important;
+}
+
+.map-name-label {
+  display: inline-block;
+  transform: translate(-50%, -130%);
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1.2;
+  padding: 3px 8px;
+  border-radius: 8px;
+  color: #1a1f1c;
+  background: rgba(255, 255, 255, 0.94);
+  border: 1.5px solid var(--label, #2d6a4f);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+  pointer-events: none;
+}
+
 .leaflet-control-zoom {
   border: 0 !important;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18) !important;

@@ -52,6 +52,21 @@ function childMarkerIcon(name, online) {
   });
 }
 
+function mapNameLabel(latlng, text, color = '#2d6a4f') {
+  const label = escapeHtml(String(text || '').trim() || '—');
+  return L.marker(latlng, {
+    icon: L.divIcon({
+      className: 'map-name-label-wrap',
+      html: `<span class="map-name-label" style="--label:${color}">${label}</span>`,
+      iconSize: [0, 0],
+      iconAnchor: [0, 0],
+    }),
+    interactive: false,
+    keyboard: false,
+    zIndexOffset: 200,
+  });
+}
+
 function applyMapMode() {
   if (!map) return;
   map.removeLayer(streetLayer);
@@ -207,6 +222,7 @@ export function mountGeofence(root) {
       })
         .bindPopup(escapeHtml(g.name || 'Bölge'))
         .addTo(fenceLayer);
+      mapNameLabel([lat, lng], g.name || 'Bölge', color).addTo(fenceLayer);
     });
   });
 
