@@ -79,9 +79,11 @@ export function mountGeofence(root) {
           <button class="btn btn-sm btn-primary" id="geo-add" type="button">+ Bölge</button>
         </div>
       </div>
-      <div class="map-status chrome-el" id="geo-status">Haritaya tıkla → merkez seç → + Bölge</div>
+      <div class="map-status chrome-el" id="geo-status">Ortadaki + hedefi kaydır → + Bölge</div>
       <div class="map-stage">
         <div id="geofence-map"></div>
+        <div class="map-crosshair" aria-hidden="true"><span class="map-crosshair-dot"></span></div>
+        <div class="map-crosshair-coords" id="geo-center-coords">—</div>
         <div class="map-zoom-fab">
           <button type="button" id="geo-zoom-in">+</button>
           <button type="button" id="geo-zoom-out">−</button>
@@ -98,6 +100,15 @@ export function mountGeofence(root) {
   root.querySelector('#geo-zoom-in').onclick = () => map.zoomIn();
   root.querySelector('#geo-zoom-out').onclick = () => map.zoomOut();
 
+  const updateGeoCoords = () => {
+    const el = document.getElementById('geo-center-coords');
+    if (!el || !map) return;
+    const c = map.getCenter();
+    el.textContent = `${c.lat.toFixed(5)}, ${c.lng.toFixed(5)}`;
+  };
+  map.on('move', updateGeoCoords);
+  map.on('moveend', updateGeoCoords);
+  updateGeoCoords();
   streetLayer = L.tileLayer(
     'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
     { maxZoom: 20, attribution: '&copy; OSM &copy; CARTO' },
@@ -231,8 +242,8 @@ function renderChildMarkers() {
   const st = document.getElementById('geo-status');
   if (st && !pendingCenter) {
     st.textContent = pts.length
-      ? `${pts.length} çocuk konumu · Haritaya tıkla → + Bölge`
-      : 'Haritaya tıkla → merkez seç → + Bölge';
+      ? `${pts.length} çocuk konumu · Ortadaki + hedefi kaydır → + Bölge`
+      : 'Ortadaki + hedefi kaydır → + Bölge';
   }
 }
 
@@ -312,10 +323,12 @@ function renderList(list) {
 }
 
 async function createFence() {
-  if (!pendingCenter) {
-    toast('Önce haritaya tıkla', 'error');
+  if (!map) {
+    toast('Harita hazır değil', 'error');
     return;
   }
+  const c = map.getCenter();
+  const center = { lat: c.lat, lng: c.lng };
   const name = prompt('Bölge adı', 'Ev')?.trim();
   if (!name) return;
   const radius = Number(prompt('Yarıçap (metre)', '200')) || 200;
@@ -323,8 +336,8 @@ async function createFence() {
     await ensureParentProfile(auth.currentUser);
     await addDoc(collection(db, 'families', auth.currentUser.uid, 'geofences'), {
       name,
-      centerLat: pendingCenter.lat,
-      centerLng: pendingCenter.lng,
+      centerLat: center.lat,
+      centerLng: center.lng,
       radiusMeters: radius,
       childIds: [],
       notifyOnEnter: true,

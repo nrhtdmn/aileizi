@@ -140,9 +140,9 @@ export function mountMap(root) {
         </div>
         <div class="tools-section">
           <h4>Konum</h4>
-          <p class="hint">Haritaya tıkla veya seçili çocuğun konumunu kaydet.</p>
+          <p class="hint">Ortadaki + hedefi kaydırarak seç, veya çocuk konumunu kaydet.</p>
           <div class="row-actions">
-            <button class="btn btn-sm btn-outline" id="btn-save-place-click" type="button">Tıklanan noktayı kaydet</button>
+            <button class="btn btn-sm btn-outline" id="btn-save-place-click" type="button">Merkez konumu kaydet</button>
             <button class="btn btn-sm btn-outline" id="btn-save-place-child" type="button">Çocuk konumunu kaydet</button>
           </div>
         </div>
@@ -161,6 +161,8 @@ export function mountMap(root) {
       <div class="map-status chrome-el" id="map-status">Konumlar yükleniyor…</div>
       <div class="map-stage">
         <div id="map"></div>
+        <div class="map-crosshair" aria-hidden="true"><span class="map-crosshair-dot"></span></div>
+        <div class="map-crosshair-coords" id="map-center-coords">—</div>
         <div class="map-zoom-fab" aria-label="Yakınlaştır">
           <button type="button" id="btn-zoom-in" title="Yakınlaştır">+</button>
           <button type="button" id="btn-zoom-out" title="Uzaklaştır">−</button>
@@ -177,6 +179,15 @@ export function mountMap(root) {
   root.querySelector('#btn-zoom-in').onclick = () => map.zoomIn();
   root.querySelector('#btn-zoom-out').onclick = () => map.zoomOut();
 
+  const updateCenterCoords = () => {
+    const el = document.getElementById('map-center-coords');
+    if (!el || !map) return;
+    const c = map.getCenter();
+    el.textContent = `${c.lat.toFixed(5)}, ${c.lng.toFixed(5)}`;
+  };
+  map.on('move', updateCenterCoords);
+  map.on('moveend', updateCenterCoords);
+  updateCenterCoords();
   streetLayer = L.tileLayer(
     'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
     {
@@ -482,17 +493,12 @@ function refreshLiveTrail() {
 }
 
 async function addSafeZoneFromMap() {
-  let center = pendingFence;
-  if (!center && selectedChildId) {
-    const m = locByChild.get(selectedChildId);
-    const lat = asNum(m?.latitude);
-    const lng = asNum(m?.longitude);
-    if (lat != null && lng != null) center = { lat, lng };
-  }
-  if (!center) {
-    toast('Haritaya tıkla veya konumlu çocuk seç', 'error');
+  if (!map) {
+    toast('Harita hazır değil', 'error');
     return;
   }
+  const c = map.getCenter();
+  const center = { lat: c.lat, lng: c.lng };
   const name = prompt('Güvenli bölge adı', 'Ev')?.trim();
   if (!name) return;
   const radius = Number(prompt('Yarıçap (metre)', '200')) || 200;
@@ -907,11 +913,12 @@ async function savePlaceAt(lat, lng, defaultName) {
 }
 
 async function savePlaceFromClick() {
-  if (!pendingFence) {
-    toast('Önce haritaya tıkla', 'error');
+  if (!map) {
+    toast('Harita hazır değil', 'error');
     return;
   }
-  await savePlaceAt(pendingFence.lat, pendingFence.lng, 'Konum');
+  const c = map.getCenter();
+  await savePlaceAt(c.lat, c.lng, 'Konum');
 }
 
 async function savePlaceFromChild() {

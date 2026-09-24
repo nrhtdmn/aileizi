@@ -974,6 +974,67 @@ a {
   flex-direction: column;
 }
 
+.map-crosshair {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 450;
+  width: 44px;
+  height: 44px;
+  margin: -22px 0 0 -22px;
+  pointer-events: none;
+  display: grid;
+  place-items: center;
+}
+
+.map-crosshair::before,
+.map-crosshair::after {
+  content: '';
+  position: absolute;
+  background: #fff;
+  box-shadow: 0 0 0 1.5px rgba(27, 67, 50, 0.95), 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+
+.map-crosshair::before {
+  width: 22px;
+  height: 3px;
+  border-radius: 2px;
+}
+
+.map-crosshair::after {
+  width: 3px;
+  height: 22px;
+  border-radius: 2px;
+}
+
+.map-crosshair-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #c62828;
+  box-shadow: 0 0 0 2px #fff, 0 1px 4px rgba(0, 0, 0, 0.35);
+  z-index: 1;
+}
+
+.map-crosshair-coords {
+  position: absolute;
+  left: 50%;
+  top: calc(50% + 28px);
+  transform: translateX(-50%);
+  z-index: 450;
+  pointer-events: none;
+  font-size: 0.68rem;
+  font-weight: 750;
+  letter-spacing: 0.02em;
+  color: #1a1f1c;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(226, 232, 228, 0.95);
+  border-radius: 8px;
+  padding: 3px 8px;
+  white-space: nowrap;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.12);
+}
+
 .map-stage #map,
 .map-stage #geofence-map {
   flex: 1;
