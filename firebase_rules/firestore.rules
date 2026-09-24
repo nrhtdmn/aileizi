@@ -1,0 +1,320 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Ebeveyn ailesinin sahibi: document id = ebeveyn uid
+    function isFamilyOwner(familyId) {
+      return isSignedIn() && request.auth.uid == familyId;
+    }
+
+    function familyDoc(familyId) {
+      return get(/databases/$(database)/documents/families/$(familyId)).data;
+    }
+
+    function hasParentIds(familyId) {
+      return familyDoc(familyId).keys().hasAny(['parentIds'])
+        && familyDoc(familyId).parentIds is list;
+    }
+
+    function isParentOf(familyId, uid) {
+      return isFamilyOwner(familyId)
+        || (hasParentIds(familyId) && uid in familyDoc(familyId).parentIds);
+    }
+
+    function isChildOf(familyId, uid) {
+      return uid in familyDoc(familyId).childIds;
+    }
+
+    function isChildOfAfter(familyId, uid) {
+      return uid in getAfter(/databases/$(database)/documents/families/$(familyId)).data.childIds;
+    }
+
+    function isMemberOf(familyId, uid) {
+      return isFamilyOwner(familyId)
+        || uid in familyDoc(familyId).memberIds;
+    }
+
+    match /families/{familyId} {
+      // Listeleme yok; get: üye/ebeveyn/çocuk
+      // Katılım sırasında çocuk henüz üye değil → update kuralı yetişir (get gerekmez)
+      allow get: if isSignedIn()
+        && (
+          isFamilyOwner(familyId)
+          || request.auth.uid in resource.data.memberIds
+          || request.auth.uid in resource.data.parentIds
+          || (
+            resource.data.keys().hasAny(['childIds'])
+            && request.auth.uid in resource.data.childIds
+          )
+        );
+
+      allow list: if false;
+
+      allow create: if isFamilyOwner(familyId)
+        && request.resource.data.parentIds == [request.auth.uid]
+        && request.resource.data.childIds == []
+        && request.resource.data.memberIds == [request.auth.uid];
+
+      // Ebeveyn tam güncelleme; çocuk yalnızca kendini childIds/memberIds'e ekler
+      allow update: if isSignedIn() && (
+        isParentOf(familyId, request.auth.uid)
+        || (
+          request.auth.uid in request.resource.data.childIds
+          && request.auth.uid in request.resource.data.memberIds
+          && request.resource.data.childIds.hasAll(
+               resource.data.keys().hasAny(['childIds'])
+                 ? resource.data.childIds
+                 : []
+             )
+          && request.resource.data.memberIds.hasAll(
+               resource.data.keys().hasAny(['memberIds'])
+                 ? resource.data.memberIds
+                 : []
+             )
+          && request.resource.data.childIds.size()
+               == (resource.data.keys().hasAny(['childIds'])
+                     ? resource.data.childIds.size()
+                     : 0) + 1
+          && request.resource.data.memberIds.size()
+               == (resource.data.keys().hasAny(['memberIds'])
+                     ? resource.data.memberIds.size()
+                     : 0) + 1
+          && (
+            !resource.data.keys().hasAny(['parentIds'])
+            || request.resource.data.parentIds == resource.data.parentIds
+          )
+          && request.resource.data.diff(resource.data).affectedKeys()
+                .hasOnly(['childIds', 'memberIds'])
+        )
+      );
+
+      allow delete: if isParentOf(familyId, request.auth.uid);
+
+      match /locations/{childId} {
+        // Ebeveyn tüm çocukları; çocuk kendi belgesini (önceki konum için) okuyabilir
+        allow read: if isParentOf(familyId, request.auth.uid)
+          || (isSignedIn() && request.auth.uid == childId);
+        allow create, update: if isSignedIn() && request.auth.uid == childId;
+        allow delete: if isParentOf(familyId, request.auth.uid)
+          || (isSignedIn() && request.auth.uid == childId);
+      }
+
+      match /location_history/{childId}/entries/{entryId} {
+        allow read: if isParentOf(familyId, request.auth.uid);
+        allow create: if isSignedIn() && request.auth.uid == childId;
+      }
+
+      match /sos_events/{eventId} {
+        allow read: if isParentOf(familyId, request.auth.uid);
+        allow create: if isSignedIn()
+          && (
+            isChildOf(familyId, request.auth.uid)
+            || request.auth.uid == request.resource.data.childId
+          );
+        allow update: if isParentOf(familyId, request.auth.uid);
+        // Aile sahibi veya parentIds içindeki ebeveyn silebilir/güncelleyebilir
+        allow delete: if isFamilyOwner(familyId)
+          || isParentOf(familyId, request.auth.uid);
+      }
+
+      match /routes/{routeId} {
+        allow read: if isMemberOf(familyId, request.auth.uid)
+          || isParentOf(familyId, request.auth.uid)
+          || isChildOf(familyId, request.auth.uid);
+
+        // Ebeveyn her rota; çocuk sadece kendi yürüyüş kaydını (mode=recorded) oluşturabilir
+        allow create: if isFamilyOwner(familyId)
+          || isParentOf(familyId, request.auth.uid)
+          || (
+            isSignedIn()
+            && isChildOf(familyId, request.auth.uid)
+            && request.resource.data.childId == request.auth.uid
+            && request.resource.data.mode == 'recorded'
+            && request.resource.data.recording == true
+          );
+
+        allow delete: if isFamilyOwner(familyId)
+          || isParentOf(familyId, request.auth.uid)
+          || (
+            isSignedIn()
+            && request.auth.uid == resource.data.childId
+            && resource.data.mode == 'recorded'
+          );
+
+        allow update: if isFamilyOwner(familyId)
+          || isParentOf(familyId, request.auth.uid)
+          || (
+            isSignedIn()
+            && request.auth.uid == resource.data.childId
+            && (
+              request.resource.data.diff(resource.data).affectedKeys()
+                  .hasOnly([
+                    'isDeviated',
+                    'active',
+                    'cancelledAt',
+                    'cancelledBy',
+                    'lastDistanceMeters',
+                    'lastCheckedAt',
+                  ])
+              || (
+                resource.data.mode == 'recorded'
+                && request.resource.data.childId == resource.data.childId
+                && request.resource.data.mode == 'recorded'
+                && request.resource.data.diff(resource.data).affectedKeys()
+                    .hasOnly([
+                      'points',
+                      'name',
+                      'recording',
+                      'active',
+                      'deviationMeters',
+                      'isDeviated',
+                      'cancelledAt',
+                      'cancelledBy',
+                      'updatedAt',
+                      'lastDistanceMeters',
+                      'lastCheckedAt',
+                    ])
+              )
+            )
+          );
+      }
+
+      match /route_events/{eventId} {
+        allow read: if isParentOf(familyId, request.auth.uid);
+        allow create: if isSignedIn()
+          && (
+            isChildOf(familyId, request.auth.uid)
+            || isParentOf(familyId, request.auth.uid)
+          );
+        allow update: if isParentOf(familyId, request.auth.uid);
+      }
+
+      match /screen_stats/{childId}/daily/{date} {
+        allow read: if isParentOf(familyId, request.auth.uid);
+        allow write: if isSignedIn() && request.auth.uid == childId;
+      }
+
+      match /geofences/{geofenceId} {
+        allow read: if isMemberOf(familyId, request.auth.uid)
+          || isParentOf(familyId, request.auth.uid)
+          || isChildOf(familyId, request.auth.uid);
+        allow write: if isParentOf(familyId, request.auth.uid);
+      }
+
+      match /geofence_events/{eventId} {
+        allow read: if isParentOf(familyId, request.auth.uid);
+        allow create: if isSignedIn()
+          && (
+            isChildOf(familyId, request.auth.uid)
+            || request.auth.uid == request.resource.data.childId
+          );
+        allow update: if isParentOf(familyId, request.auth.uid);
+      }
+
+      match /child_policies/{childId} {
+        allow read: if isMemberOf(familyId, request.auth.uid)
+          || isParentOf(familyId, request.auth.uid)
+          || isChildOf(familyId, request.auth.uid)
+          || (isSignedIn() && request.auth.uid == childId);
+        allow write: if isParentOf(familyId, request.auth.uid);
+      }
+
+      match /device_status/{childId} {
+        allow read: if isParentOf(familyId, request.auth.uid)
+          || (isSignedIn() && request.auth.uid == childId);
+        allow create, update: if isSignedIn() && request.auth.uid == childId;
+        allow delete: if isParentOf(familyId, request.auth.uid)
+          || (isSignedIn() && request.auth.uid == childId);
+      }
+
+      match /suspicious_events/{eventId} {
+        allow read: if isParentOf(familyId, request.auth.uid);
+        allow create: if isSignedIn() && isChildOf(familyId, request.auth.uid);
+      }
+
+      // Ebeveyn ↔ çocuk mesajları (chatId = childUid)
+      match /chats/{childId}/messages/{messageId} {
+        allow read: if isParentOf(familyId, request.auth.uid)
+          || (isSignedIn() && request.auth.uid == childId);
+        allow create: if isSignedIn()
+          && request.resource.data.senderId == request.auth.uid
+          && request.resource.data.childId == childId
+          && (
+            isParentOf(familyId, request.auth.uid)
+            || request.auth.uid == childId
+          );
+        allow update: if isParentOf(familyId, request.auth.uid)
+          || (isSignedIn() && request.auth.uid == childId);
+        allow delete: if isParentOf(familyId, request.auth.uid);
+      }
+    }
+
+    match /users/{userId} {
+      allow read: if isSignedIn() && request.auth.uid == userId;
+      allow read: if isSignedIn()
+        && resource.data.familyId is string
+        && (
+          isMemberOf(resource.data.familyId, request.auth.uid)
+          || isParentOf(resource.data.familyId, request.auth.uid)
+        );
+
+      allow create: if isSignedIn() && request.auth.uid == userId;
+
+      allow update: if isSignedIn() && (
+        request.auth.uid == userId
+        || (
+          resource.data.keys().hasAny(['familyId'])
+          && resource.data.familyId is string
+          && isParentOf(resource.data.familyId, request.auth.uid)
+          && request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['name', 'updatedAt', 'familyId', 'role', 'locationSharingEnabled'])
+        )
+      );
+
+      allow delete: if isSignedIn() && (
+        request.auth.uid == userId
+        || (
+          resource.data.keys().hasAny(['familyId'])
+          && resource.data.familyId is string
+          && isParentOf(resource.data.familyId, request.auth.uid)
+        )
+      );
+    }
+
+    match /invites/{code} {
+      // Çocuk: kullanılmamış+süreli kod; ebeveyn: kendi ailesinin tüm davetleri
+      allow read: if isSignedIn() && (
+        (
+          resource.data.used == false
+          && resource.data.expiresAt > request.time
+        )
+        || resource.data.familyId == request.auth.uid
+        || (
+          resource.data.familyId is string
+          && isParentOf(resource.data.familyId, request.auth.uid)
+        )
+      );
+      allow create: if isSignedIn()
+        && request.resource.data.familyId == request.auth.uid
+        && isParentOf(request.resource.data.familyId, request.auth.uid);
+      allow update: if isSignedIn()
+        && resource.data.used == false
+        && request.resource.data.used == true
+        && request.resource.data.familyId == resource.data.familyId
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['used'])
+        && (
+          isChildOf(resource.data.familyId, request.auth.uid)
+          || isChildOfAfter(resource.data.familyId, request.auth.uid)
+        );
+      allow delete: if isSignedIn()
+        && (
+          resource.data.familyId == request.auth.uid
+          || isParentOf(resource.data.familyId, request.auth.uid)
+        );
+    }
+  }
+}

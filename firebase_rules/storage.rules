@@ -1,0 +1,28 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // familyId = ebeveyn uid; childId = çocuk uid
+    // firestore.get kullanmıyoruz: kota / rules gecikmesi fotoğrafı düşürmesin
+    function isChatParticipant(familyId, childId) {
+      return isSignedIn()
+        && (request.auth.uid == familyId || request.auth.uid == childId);
+    }
+
+    // families/{familyId}/chats/{childId}/{file}
+    match /families/{familyId}/chats/{childId}/{fileName} {
+      allow read: if isChatParticipant(familyId, childId);
+
+      allow write: if isChatParticipant(familyId, childId)
+        && request.resource.size < 8 * 1024 * 1024
+        && (
+          request.resource.contentType == null
+          || request.resource.contentType.matches('image/.*')
+          || request.resource.contentType == 'application/octet-stream'
+        );
+    }
+  }
+}

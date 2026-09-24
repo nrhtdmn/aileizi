@@ -1,0 +1,51 @@
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+subprojects { project ->
+    if (project.name != "app" && !project.hasProperty("flutter")) {
+        project.ext.flutter = [
+            compileSdkVersion: 35,
+            minSdkVersion    : 23,
+            targetSdkVersion : 35
+        ]
+    }
+}
+
+rootProject.buildDir = "../build"
+subprojects {
+    project.buildDir = "${rootProject.buildDir}/${project.name}"
+}
+subprojects {
+    project.evaluationDependsOn(":app")
+}
+
+// usage_stats vb. eski eklentiler: release’te android:attr/lStar hatasını önle
+subprojects { sub ->
+    def bumpCompileSdk = {
+        if (!sub.plugins.hasPlugin("com.android.library") &&
+            !sub.plugins.hasPlugin("com.android.application")) {
+            return
+        }
+        def androidExt = sub.extensions.findByName("android")
+        if (androidExt == null) return
+        try {
+            androidExt.compileSdkVersion 35
+        } catch (Throwable ignored) {}
+        try {
+            androidExt.compileSdk = 35
+        } catch (Throwable ignored) {}
+    }
+    if (sub.state.executed) {
+        bumpCompileSdk()
+    } else {
+        sub.afterEvaluate { bumpCompileSdk() }
+    }
+}
+
+tasks.register("clean", Delete) {
+    delete rootProject.buildDir
+}

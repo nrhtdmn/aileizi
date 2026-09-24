@@ -1,0 +1,47 @@
+# Flutter / Dart
+**/build/
+**/.dart_tool/
+**/.flutter-plugins
+**/.flutter-plugins-dependencies
+**/.packages
+**/.pub-cache/
+**/.pub/
+**/doc/api/
+**/ios/Flutter/Flutter.framework
+**/ios/Flutter/Flutter.podspec
+**/ios/Pods/
+**/ios/.symlinks/
+**/macos/Flutter/ephemeral/
+**/linux/flutter/ephemeral/
+**/windows/flutter/ephemeral/
+**/*.iml
+**/.idea/
+**/*.lock
+!**/pubspec.lock
+
+# Android
+**/android/.gradle/
+**/android/local.properties
+**/android/app/debug/
+**/android/app/profile/
+**/android/app/release/
+**/android/captures/
+**/android/key.properties
+**/*.jks
+**/*.keystore
+
+# Misc
+.DS_Store
+*.log
+.env
+.env.*
+!.env.example
+node_modules/
+
+# Accidental / local IDE
+.vscode/
+*.swp
+*~
+
+# Don't commit accidental brace-expansion folder if present
+{parent_app,child_app,firebase_rules}/

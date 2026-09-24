@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "151476278678",
+    "project_id": "aile-takip-8bf84",
+    "storage_bucket": "aile-takip-8bf84.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:151476278678:android:01135de796f8401f3ff9b7",
+        "android_client_info": {
+          "package_name": "com.senin.child"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBrOInocmwH3r1wJ_GxmlTQ0Np4yoqaK-k"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:151476278678:android:ac0fdc0631f702153ff9b7",
+        "android_client_info": {
+          "package_name": "com.senin.parent"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBrOInocmwH3r1wJ_GxmlTQ0Np4yoqaK-k"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
