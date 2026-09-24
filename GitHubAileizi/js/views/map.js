@@ -19,6 +19,11 @@ import {
 import { DEFAULT_MAP, OSRM_URL } from '../config.js';
 import { toast, escapeHtml, fmtTime, pickFenceColor, normalizeFenceColor } from '../utils.js';
 import { setKeepAwake } from '../keep-awake.js';
+import {
+  getShowAllFences,
+  isFenceVisibleOnMap,
+  setAllFencesVisible,
+} from '../fence-visibility.js';
 
 let map;
 let markersLayer;
@@ -43,7 +48,6 @@ let draftPoints = [];
 let draftPolyline;
 let follow = false;
 let mapMode = localStorage.getItem('aileizi_map_mode') || 'hybrid';
-let showFences = localStorage.getItem('aileizi_show_fences') !== '0';
 let fencesCache = [];
 let didFit = false;
 let pendingFence = null;
@@ -135,7 +139,6 @@ export function mountMap(root) {
         <div class="map-actions">
           <button class="btn btn-sm btn-outline" id="btn-map-type" type="button">Hibrit</button>
           <button class="btn btn-sm btn-outline" id="btn-center" type="button">Ortala</button>
-          <button class="btn btn-sm btn-outline" id="btn-toggle-fences" type="button">Bölgeler</button>
           <button class="btn btn-sm btn-outline" id="btn-tools" type="button">Araçlar</button>
           <button class="btn btn-sm btn-primary map-icon-btn" id="btn-add-fence" type="button" title="Güvenli bölge ekle" aria-label="Güvenli bölge ekle">🛡️+</button>
         </div>
@@ -249,12 +252,9 @@ export function mountMap(root) {
   markersLayer = L.layerGroup().addTo(map);
   historyLayer = L.layerGroup().addTo(map);
   routesLayer = L.layerGroup().addTo(map);
-  fencesLayer = L.layerGroup();
-  if (showFences) fencesLayer.addTo(map);
+  fencesLayer = L.layerGroup().addTo(map);
   placesLayer = L.layerGroup().addTo(map);
   highlightLayer = L.layerGroup().addTo(map);
-  syncFenceToggleBtn();
-
   if (pendingShow) {
     const p = pendingShow;
     pendingShow = null;
@@ -421,18 +421,7 @@ export function mountMap(root) {
     applyMapMode();
   };
   root.querySelector('#btn-center').onclick = () => fitToMarkers(true);
-  root.querySelector('#btn-toggle-fences').onclick = () => {
-    showFences = !showFences;
-    localStorage.setItem('aileizi_show_fences', showFences ? '1' : '0');
-    if (showFences) {
-      fencesLayer.addTo(map);
-      renderFencesOnMap();
-    } else {
-      map.removeLayer(fencesLayer);
-    }
-    syncFenceToggleBtn();
-    toast(showFences ? 'Bölgeler görünür' : 'Bölgeler gizli');
-  };
+  window.addEventListener('aileizi-fences-vis', onFencesVisChange);
   root.querySelector('#btn-tools').onclick = (e) => {
     const panel = root.querySelector('#tools-panel');
     const open = panel.classList.toggle('open');
@@ -598,12 +587,7 @@ async function addSafeZoneFromMap() {
       notifyOnExit: true,
       createdAt: serverTimestamp(),
     });
-    if (!showFences) {
-      showFences = true;
-      localStorage.setItem('aileizi_show_fences', '1');
-      fencesLayer.addTo(map);
-      syncFenceToggleBtn();
-    }
+    if (!getShowAllFences()) setAllFencesVisible(true);
     toast('Güvenli bölge eklendi', 'success');
     pendingFence = null;
     if (fencePreview) {
@@ -615,17 +599,15 @@ async function addSafeZoneFromMap() {
   }
 }
 
-function syncFenceToggleBtn() {
-  const btn = document.getElementById('btn-toggle-fences');
-  if (!btn) return;
-  btn.textContent = showFences ? 'Bölgeler ✓' : 'Bölgeler';
-  btn.classList.toggle('is-on', showFences);
+function onFencesVisChange() {
+  renderFencesOnMap();
 }
 
 function renderFencesOnMap() {
   if (!fencesLayer) return;
   fencesLayer.clearLayers();
   fencesCache.forEach((g) => {
+    if (!isFenceVisibleOnMap(g.id)) return;
     const lat = asNum(g.centerLat);
     const lng = asNum(g.centerLng);
     if (lat == null || lng == null) return;
@@ -1066,6 +1048,7 @@ export function unmountMap() {
   liveTrailLine = null;
   historyAnimPts = [];
   highlightLayer = null;
+  window.removeEventListener('aileizi-fences-vis', onFencesVisChange);
   if (unsubFam) unsubFam();
   if (unsubLoc) unsubLoc();
   if (unsubStatus) unsubStatus();

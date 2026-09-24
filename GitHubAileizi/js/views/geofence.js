@@ -14,6 +14,13 @@ import {
 } from '../firebase-app.js';
 import { DEFAULT_MAP } from '../config.js';
 import { t, toast, escapeHtml, fmtTime, pickFenceColor, normalizeFenceColor } from '../utils.js';
+import {
+  getShowAllFences,
+  isFenceVisibleOnMap,
+  setAllFencesVisible,
+  toggleFenceVisible,
+  eyeIcon,
+} from '../fence-visibility.js';
 
 let map;
 let fenceLayer;
@@ -30,6 +37,7 @@ let hybridBase;
 let hybridLabels;
 let mapMode = localStorage.getItem('aileizi_map_mode') || 'hybrid';
 const locByChild = new Map();
+let lastFenceList = [];
 
 function asNum(v) {
   if (typeof v === 'number' && Number.isFinite(v)) return v;
@@ -204,28 +212,13 @@ export function mountGeofence(root) {
   });
 
   unsubFences = onSnapshot(collection(db, 'families', fid, 'geofences'), (snap) => {
-    fenceLayer.clearLayers();
-    const list = [];
-    snap.forEach((d) => list.push({ id: d.id, ...d.data() }));
-    renderList(list);
-    list.forEach((g) => {
-      const lat = asNum(g.centerLat);
-      const lng = asNum(g.centerLng);
-      if (lat == null || lng == null) return;
-      const color = normalizeFenceColor(g.color);
-      L.circle([lat, lng], {
-        radius: g.radiusMeters || 200,
-        color,
-        weight: 2.5,
-        fillColor: color,
-        fillOpacity: 0.18,
-      })
-        .bindPopup(escapeHtml(g.name || 'Bölge'))
-        .addTo(fenceLayer);
-      mapNameLabel([lat, lng], g.name || 'Bölge', color).addTo(fenceLayer);
-    });
+    lastFenceList = [];
+    snap.forEach((d) => lastFenceList.push({ id: d.id, ...d.data() }));
+    renderList(lastFenceList);
+    drawVisibleFences(lastFenceList);
   });
 
+  window.addEventListener('aileizi-fences-vis', onGeoFencesVis);
   root.querySelector('#geo-map-type').onclick = () => {
     mapMode = mapMode === 'hybrid' ? 'street' : 'hybrid';
     localStorage.setItem('aileizi_map_mode', mapMode);
@@ -275,6 +268,33 @@ function fitAll() {
   map.fitBounds(L.featureGroup(layers).getBounds().pad(0.2), { maxZoom: 16 });
 }
 
+function drawVisibleFences(list) {
+  if (!fenceLayer) return;
+  fenceLayer.clearLayers();
+  (list || []).forEach((g) => {
+    if (!isFenceVisibleOnMap(g.id)) return;
+    const lat = asNum(g.centerLat);
+    const lng = asNum(g.centerLng);
+    if (lat == null || lng == null) return;
+    const color = normalizeFenceColor(g.color);
+    L.circle([lat, lng], {
+      radius: g.radiusMeters || 200,
+      color,
+      weight: 2.5,
+      fillColor: color,
+      fillOpacity: 0.18,
+    })
+      .bindPopup(escapeHtml(g.name || 'Bölge'))
+      .addTo(fenceLayer);
+    mapNameLabel([lat, lng], g.name || 'Bölge', color).addTo(fenceLayer);
+  });
+}
+
+function onGeoFencesVis() {
+  renderList(lastFenceList);
+  drawVisibleFences(lastFenceList);
+}
+
 function renderList(list) {
   const el = document.getElementById('geo-list');
   if (!el) return;
@@ -282,21 +302,49 @@ function renderList(list) {
     el.innerHTML = `<div class="empty" style="padding:12px">Bölge yok</div>`;
     return;
   }
-  el.innerHTML = list
-    .map(
-      (g) => `
-    <div class="row" style="margin:8px 10px">
-      <h3>${escapeHtml(g.name || 'Bölge')}</h3>
+  const allOn = getShowAllFences();
+  el.innerHTML = `
+    <div class="fence-vis-all">
+      <button type="button" class="vis-eye ${allOn ? 'is-on' : ''}" id="vis-all" title="${allOn ? 'Tüm bölgeleri gizle' : 'Tüm bölgeleri göster'}">
+        <span class="vis-ico">${eyeIcon(allOn)}</span>
+        <span>Tüm bölgeler</span>
+        <span class="vis-state">${allOn ? 'görünür' : 'gizli'}</span>
+      </button>
+    </div>
+    ${list
+      .map((g) => {
+        const on = isFenceVisibleOnMap(g.id);
+        return `
+    <div class="row fence-row ${on ? '' : 'is-hidden-fence'}" style="margin:8px 10px">
+      <div class="fence-row-head">
+        <button type="button" class="vis-eye ${on ? 'is-on' : ''}" data-vis="${g.id}" title="${on ? 'Haritada gizle' : 'Haritada göster'}">
+          <span class="vis-ico">${eyeIcon(on)}</span>
+        </button>
+        <h3>${escapeHtml(g.name || 'Bölge')}</h3>
+      </div>
       <div class="meta">${Math.round(g.radiusMeters || 0)} m · <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${normalizeFenceColor(g.color)};vertical-align:middle"></span> · giriş:${g.notifyOnEnter !== false ? 'açık' : 'kapalı'} · çıkış:${g.notifyOnExit !== false ? 'açık' : 'kapalı'}</div>
       <div class="row-actions">
-        <button class="btn btn-sm btn-outline" data-focus="${g.id}">Göster</button>
+        <button class="btn btn-sm btn-outline" data-focus="${g.id}">Odakla</button>
         <button class="btn btn-sm btn-outline" data-edit="${g.id}">Düzenle</button>
         <button class="btn btn-sm btn-outline" data-color="${g.id}">Renk</button>
         <button class="btn btn-sm btn-outline" data-del="${g.id}">${t('delete')}</button>
       </div>
-    </div>`,
-    )
-    .join('');
+    </div>`;
+      })
+      .join('')}`;
+
+  el.querySelector('#vis-all')?.addEventListener('click', () => {
+    setAllFencesVisible(!getShowAllFences());
+    toast(getShowAllFences() ? 'Tüm bölgeler görünür' : 'Tüm bölgeler gizli');
+  });
+
+  el.querySelectorAll('[data-vis]').forEach((b) => {
+    b.onclick = () => {
+      toggleFenceVisible(b.dataset.vis);
+      const on = isFenceVisibleOnMap(b.dataset.vis);
+      toast(on ? 'Bölge görünür' : 'Bölge gizli');
+    };
+  });
 
   el.querySelectorAll('[data-focus]').forEach((b) => {
     b.onclick = () => {
@@ -384,6 +432,7 @@ async function createFence() {
       createdAt: serverTimestamp(),
     });
     toast('Bölge eklendi', 'success');
+    if (!getShowAllFences()) setAllFencesVisible(true);
     pendingCenter = null;
     if (circlePreview) {
       map.removeLayer(circlePreview);
@@ -395,11 +444,13 @@ async function createFence() {
 }
 
 export function unmountGeofence() {
+  window.removeEventListener('aileizi-fences-vis', onGeoFencesVis);
   if (unsubFences) unsubFences();
   if (unsubFam) unsubFam();
   if (unsubLoc) unsubLoc();
   unsubFences = unsubFam = unsubLoc = null;
   locByChild.clear();
+  lastFenceList = [];
   if (map) {
     map.remove();
     map = null;

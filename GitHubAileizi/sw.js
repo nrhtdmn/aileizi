@@ -1,5 +1,5 @@
 /* Aileİzi PWA — offline shell cache */
-const CACHE = 'aileizi-v18';
+const CACHE = 'aileizi-v19';
 const ASSETS = [
   './',
   './index.html',

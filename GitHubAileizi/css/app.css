@@ -1294,6 +1294,66 @@ a {
   border-top: 1px solid var(--line);
 }
 
+.fence-vis-all {
+  padding: 10px 10px 4px;
+}
+
+.vis-eye {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--line);
+  background: #fff;
+  border-radius: 12px;
+  padding: 8px 12px;
+  font-weight: 750;
+  color: var(--muted);
+  width: 100%;
+  text-align: left;
+}
+
+.vis-eye.is-on {
+  border-color: var(--green-2);
+  background: var(--green-soft);
+  color: var(--green);
+}
+
+.vis-eye .vis-ico {
+  font-size: 1.05rem;
+  line-height: 1;
+}
+
+.vis-eye .vis-state {
+  margin-left: auto;
+  font-size: 0.75rem;
+  font-weight: 700;
+  opacity: 0.85;
+}
+
+.fence-row-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.fence-row-head .vis-eye {
+  width: auto;
+  min-width: 40px;
+  justify-content: center;
+  padding: 6px 8px;
+  flex-shrink: 0;
+}
+
+.fence-row-head h3 {
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+}
+
+.fence-row.is-hidden-fence {
+  opacity: 0.55;
+}
+
 .check-row {
   display: flex;
   align-items: center;
