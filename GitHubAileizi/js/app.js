@@ -248,7 +248,6 @@ function renderParentShell() {
             <option value="">Tüm çocuklar</option>
           </select>
         </div>
-        <button type="button" class="btn btn-sm btn-outline hidden" id="btn-chrome-hide" title="Sadece harita">Gizle</button>
       </header>
       <main id="view-root"></main>
       <nav class="bottom-nav" id="bottom-nav">
@@ -260,7 +259,7 @@ function renderParentShell() {
           </button>`,
         ).join('')}
       </nav>
-      <button type="button" class="chrome-show-fab hidden" id="btn-chrome-show">Göster</button>
+      <button type="button" class="chrome-toggle-fab hidden" id="btn-chrome-toggle">Gizle</button>
       <div class="install-banner" id="install-banner">
         <span>${t('install')}</span>
         <button class="btn btn-sm" id="install-btn" style="background:#fff;color:var(--green)">Yükle</button>
@@ -270,23 +269,22 @@ function renderParentShell() {
 
   const applyChrome = () => {
     const shell = document.getElementById('app-shell');
-    const showFab = document.getElementById('btn-chrome-show');
-    const hideBtn = document.getElementById('btn-chrome-hide');
+    const toggle = document.getElementById('btn-chrome-toggle');
     shell?.classList.toggle('chrome-hidden', chromeHidden);
-    showFab?.classList.toggle('hidden', !chromeHidden);
-    if (hideBtn) hideBtn.textContent = chromeHidden ? 'Göster' : 'Gizle';
+    if (toggle) {
+      toggle.textContent = chromeHidden ? 'Göster' : 'Gizle';
+      toggle.title = chromeHidden ? 'Menüyü göster' : 'Sadece harita';
+    }
     setKeepAwake('chrome', chromeHidden);
-    // Map needs resize after chrome toggle
-    setTimeout(() => window.dispatchEvent(new Event('resize')), 80);
+    setTimeout(() => {
+      window.dispatchEvent(new Event('resize'));
+      // Leaflet needs a second pass after layout settles
+      setTimeout(() => window.dispatchEvent(new Event('resize')), 120);
+    }, 40);
   };
 
-  app.querySelector('#btn-chrome-hide').onclick = () => {
-    // Only useful on map-like tabs; still allow globally
+  app.querySelector('#btn-chrome-toggle').onclick = () => {
     chromeHidden = !chromeHidden;
-    applyChrome();
-  };
-  app.querySelector('#btn-chrome-show').onclick = () => {
-    chromeHidden = false;
     applyChrome();
   };
 
@@ -320,11 +318,11 @@ function renderParentShell() {
 
 function syncTopChildVisibility() {
   const sel = document.getElementById('top-child');
-  const hideBtn = document.getElementById('btn-chrome-hide');
+  const toggle = document.getElementById('btn-chrome-toggle');
   const mapTab = currentTab === 0;
   const mapLike = currentTab === 0 || currentTab === 4;
   if (sel) sel.classList.toggle('hidden', !mapLike);
-  if (hideBtn) hideBtn.classList.toggle('hidden', !mapTab);
+  if (toggle) toggle.classList.toggle('hidden', !mapTab);
 }
 
 function escape(s) {
