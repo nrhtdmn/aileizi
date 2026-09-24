@@ -51,6 +51,8 @@ let historyHours = 24;
 let historyAnimPts = [];
 /** @type {Map<string, object>} */
 const locByChild = new Map();
+let highlightLayer = null;
+let pendingShow = null;
 
 function familyId() {
   return auth.currentUser?.uid;
@@ -220,6 +222,13 @@ export function mountMap(root) {
   markersLayer = L.layerGroup().addTo(map);
   historyLayer = L.layerGroup().addTo(map);
   routesLayer = L.layerGroup().addTo(map);
+  highlightLayer = L.layerGroup().addTo(map);
+
+  if (pendingShow) {
+    const p = pendingShow;
+    pendingShow = null;
+    setTimeout(() => applyShowRecord(p), 200);
+  }
 
   const fid = familyId();
   if (!fid) {
@@ -944,6 +953,7 @@ export function unmountMap() {
   liveTrailPoints = [];
   liveTrailLine = null;
   historyAnimPts = [];
+  highlightLayer = null;
   if (unsubFam) unsubFam();
   if (unsubLoc) unsubLoc();
   if (unsubStatus) unsubStatus();
@@ -968,4 +978,121 @@ export function focusMapOn(lat, lng) {
   if (map && a != null && b != null) {
     map.setView([a, b], 16);
   }
+}
+
+/** Kayıtlar’dan haritada göster: route | fence | place | trail */
+export function showRecordOnMap(record) {
+  if (!record) return;
+  if (!map) {
+    pendingShow = record;
+    return;
+  }
+  applyShowRecord(record);
+}
+
+function applyShowRecord(record) {
+  if (!map || !highlightLayer) {
+    pendingShow = record;
+    return;
+  }
+  highlightLayer.clearLayers();
+  const name = escapeHtml(record.name || 'Kayıt');
+  const type = record.type;
+
+  if (type === 'place') {
+    const lat = asNum(record.latitude);
+    const lng = asNum(record.longitude);
+    if (lat == null || lng == null) {
+      toast('Konum yok', 'error');
+      return;
+    }
+    L.circleMarker([lat, lng], {
+      radius: 11,
+      color: '#fff',
+      weight: 2,
+      fillColor: '#c62828',
+      fillOpacity: 1,
+    })
+      .bindPopup(`<strong>${name}</strong>`)
+      .addTo(highlightLayer)
+      .openPopup();
+    map.setView([lat, lng], 16);
+    setStatus(`Konum: ${record.name || 'Konum'}`);
+    return;
+  }
+
+  if (type === 'fence') {
+    const lat = asNum(record.centerLat);
+    const lng = asNum(record.centerLng);
+    if (lat == null || lng == null) {
+      toast('Bölge merkezi yok', 'error');
+      return;
+    }
+    const radius = Number(record.radiusMeters) || 200;
+    const circle = L.circle([lat, lng], {
+      radius,
+      color: '#1b4332',
+      weight: 3,
+      fillColor: '#2d6a4f',
+      fillOpacity: 0.2,
+    })
+      .bindPopup(`<strong>${name}</strong><br>${Math.round(radius)} m`)
+      .addTo(highlightLayer);
+    L.circleMarker([lat, lng], {
+      radius: 6,
+      color: '#fff',
+      weight: 2,
+      fillColor: '#1b4332',
+      fillOpacity: 1,
+    }).addTo(highlightLayer);
+    map.fitBounds(circle.getBounds().pad(0.25), { maxZoom: 17 });
+    circle.openPopup();
+    setStatus(`Bölge: ${record.name || 'Bölge'}`);
+    return;
+  }
+
+  if (type === 'route' || type === 'trail') {
+    const raw = record.points || [];
+    const pts = raw
+      .map((p) => {
+        if (Array.isArray(p)) return [asNum(p[0]), asNum(p[1])];
+        return [asNum(p.latitude), asNum(p.longitude)];
+      })
+      .filter((p) => p[0] != null && p[1] != null);
+    if (pts.length < 1) {
+      toast('Gösterilecek nokta yok', 'error');
+      return;
+    }
+    const color = type === 'trail' ? '#4a90d9' : '#2d6a4f';
+    if (pts.length >= 2) {
+      L.polyline(pts, { color, weight: 5, opacity: 0.95 }).addTo(highlightLayer);
+    }
+    L.circleMarker(pts[0], {
+      radius: 8,
+      color: '#fff',
+      weight: 2,
+      fillColor: '#2d6a4f',
+      fillOpacity: 1,
+    })
+      .bindPopup(`<strong>${name}</strong><br>Başlangıç`)
+      .addTo(highlightLayer);
+    L.circleMarker(pts[pts.length - 1], {
+      radius: 8,
+      color: '#fff',
+      weight: 2,
+      fillColor: '#c62828',
+      fillOpacity: 1,
+    })
+      .bindPopup('Son')
+      .addTo(highlightLayer);
+    if (pts.length >= 2) {
+      map.fitBounds(pts, { padding: [40, 40], maxZoom: 17 });
+    } else {
+      map.setView(pts[0], 16);
+    }
+    setStatus(`${type === 'trail' ? 'İz' : 'Rota'}: ${record.name || ''}`);
+    return;
+  }
+
+  toast('Bilinmeyen kayıt', 'error');
 }

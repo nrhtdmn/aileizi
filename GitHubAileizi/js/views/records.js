@@ -14,6 +14,7 @@ import {
   tsToDate,
 } from '../firebase-app.js';
 import { t, fmtTime, toast, escapeHtml, shareText } from '../utils.js';
+import { showRecordOnMap } from './map.js';
 
 let unsubs = [];
 let children = [];
@@ -26,6 +27,13 @@ const SECTIONS = [
   { id: 'places', label: 'Konumlar', ico: '📌' },
   { id: 'trails', label: 'İzler', ico: '👣' },
 ];
+
+function goShow(record) {
+  showRecordOnMap(record);
+  if (typeof window.__aileiziGoTab === 'function') {
+    window.__aileiziGoTab(0);
+  }
+}
 
 function mapsPoint(lat, lng, label) {
   const q = encodeURIComponent(`${lat},${lng}`);
@@ -74,7 +82,7 @@ export function mountRecords(root) {
       <div class="panel-title">
         <h2>Kayıtlar</h2>
       </div>
-      <p class="meta records-intro">Rota, bölge, konum ve izleri buradan düzenle, sil veya paylaş.</p>
+      <p class="meta records-intro">Rota, bölge, konum ve izleri buradan göster, düzenle, sil veya paylaş.</p>
       <div class="records-tabs" id="records-tabs" role="tablist">
         ${SECTIONS.map(
           (s) => `
@@ -185,6 +193,7 @@ function renderRoutes(el, tool) {
         <div class="meta">${escapeHtml(childName(r.childId))} · ${pts} nokta · eşik ${Math.round(r.deviationMeters || 80)} m</div>
         <div class="meta">${fmtTime(tsToDate(r.createdAt))}</div>
         <div class="row-actions">
+          <button class="btn btn-sm btn-outline" data-show="${r.id}">Göster</button>
           <button class="btn btn-sm btn-outline" data-toggle="${r.id}" data-active="${active ? '1' : '0'}">${active ? 'Durdur' : 'Başlat'}</button>
           <button class="btn btn-sm btn-outline" data-rename="${r.id}">Ad</button>
           <button class="btn btn-sm btn-outline" data-thresh="${r.id}">Eşik</button>
@@ -196,6 +205,18 @@ function renderRoutes(el, tool) {
     .join('');
 
   const fid = auth.currentUser.uid;
+
+  el.querySelectorAll('[data-show]').forEach((b) => {
+    b.onclick = () => {
+      const r = list.find((x) => x.id === b.dataset.show);
+      if (!r) return;
+      goShow({
+        type: 'route',
+        name: r.name,
+        points: r.points || [],
+      });
+    };
+  });
 
   el.querySelectorAll('[data-toggle]').forEach((b) => {
     b.onclick = async () => {
@@ -293,6 +314,7 @@ function renderFences(el, tool) {
       <div class="meta">${Math.round(g.radiusMeters || 0)} m · giriş ${g.notifyOnEnter !== false ? 'açık' : 'kapalı'} · çıkış ${g.notifyOnExit !== false ? 'açık' : 'kapalı'}</div>
       <div class="meta">${fmtTime(tsToDate(g.createdAt))}</div>
       <div class="row-actions">
+        <button class="btn btn-sm btn-outline" data-show="${g.id}">Göster</button>
         <button class="btn btn-sm btn-outline" data-edit="${g.id}">Düzenle</button>
         <button class="btn btn-sm btn-outline" data-share="${g.id}">Paylaş</button>
         <button class="btn btn-sm btn-outline" data-del="${g.id}">${t('delete')}</button>
@@ -302,6 +324,20 @@ function renderFences(el, tool) {
     .join('');
 
   const fid = auth.currentUser.uid;
+
+  el.querySelectorAll('[data-show]').forEach((b) => {
+    b.onclick = () => {
+      const g = list.find((x) => x.id === b.dataset.show);
+      if (!g) return;
+      goShow({
+        type: 'fence',
+        name: g.name,
+        centerLat: g.centerLat,
+        centerLng: g.centerLng,
+        radiusMeters: g.radiusMeters,
+      });
+    };
+  });
 
   el.querySelectorAll('[data-edit]').forEach((b) => {
     b.onclick = async () => {
@@ -374,6 +410,7 @@ function renderPlaces(el, tool) {
       <div class="meta">${Number(p.latitude).toFixed(5)}, ${Number(p.longitude).toFixed(5)}${p.note ? ` · ${escapeHtml(p.note)}` : ''}</div>
       <div class="meta">${fmtTime(tsToDate(p.createdAt))}</div>
       <div class="row-actions">
+        <button class="btn btn-sm btn-outline" data-show="${p.id}">Göster</button>
         <button class="btn btn-sm btn-outline" data-edit="${p.id}">Düzenle</button>
         <button class="btn btn-sm btn-outline" data-share="${p.id}">Paylaş</button>
         <button class="btn btn-sm btn-outline" data-del="${p.id}">${t('delete')}</button>
@@ -383,6 +420,19 @@ function renderPlaces(el, tool) {
     .join('');
 
   const fid = auth.currentUser.uid;
+
+  el.querySelectorAll('[data-show]').forEach((b) => {
+    b.onclick = () => {
+      const p = list.find((x) => x.id === b.dataset.show);
+      if (!p) return;
+      goShow({
+        type: 'place',
+        name: p.name,
+        latitude: p.latitude,
+        longitude: p.longitude,
+      });
+    };
+  });
 
   el.querySelectorAll('[data-edit]').forEach((b) => {
     b.onclick = async () => {
@@ -474,6 +524,7 @@ function renderTrails(el, tool) {
         <div class="meta">${escapeHtml(childName(tr.childId))} · ${pts} nokta${src ? ` · ${src}` : ''}${tr.hours ? ` · ${tr.hours}s` : ''}</div>
         <div class="meta">${fmtTime(tsToDate(tr.createdAt))}</div>
         <div class="row-actions">
+          <button class="btn btn-sm btn-outline" data-show="${tr.id}">Göster</button>
           <button class="btn btn-sm btn-outline" data-rename="${tr.id}">Ad</button>
           <button class="btn btn-sm btn-outline" data-share="${tr.id}">Paylaş</button>
           <button class="btn btn-sm btn-outline" data-del="${tr.id}">${t('delete')}</button>
@@ -483,6 +534,18 @@ function renderTrails(el, tool) {
     .join('');
 
   const fid = auth.currentUser.uid;
+
+  el.querySelectorAll('[data-show]').forEach((b) => {
+    b.onclick = () => {
+      const tr = list.find((x) => x.id === b.dataset.show);
+      if (!tr) return;
+      goShow({
+        type: 'trail',
+        name: tr.name,
+        points: tr.points || [],
+      });
+    };
+  });
 
   el.querySelectorAll('[data-rename]').forEach((b) => {
     b.onclick = async () => {
