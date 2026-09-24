@@ -39,6 +39,8 @@ let draftPolyline;
 let follow = false;
 let mapMode = localStorage.getItem('aileizi_map_mode') || 'hybrid';
 let didFit = false;
+let pendingFence = null;
+let fencePreview = null;
 /** @type {Map<string, object>} */
 const locByChild = new Map();
 
@@ -101,6 +103,7 @@ export function mountMap(root) {
           <button class="btn btn-sm btn-outline" id="btn-follow" type="button">Takip</button>
           <button class="btn btn-sm btn-outline" id="btn-history" type="button">İz</button>
           <button class="btn btn-sm btn-outline" id="btn-route-toggle" type="button">Rota</button>
+          <button class="btn btn-sm btn-primary" id="btn-add-fence" type="button">+ Bölge</button>
         </div>
       </div>
       <div class="route-panel" id="route-panel">
@@ -111,7 +114,13 @@ export function mountMap(root) {
         <button class="btn btn-sm btn-primary" id="btn-save-route" type="button" disabled>Kaydet</button>
       </div>
       <div class="map-status" id="map-status">Konumlar yükleniyor…</div>
-      <div id="map"></div>
+      <div class="map-stage">
+        <div id="map"></div>
+        <div class="map-zoom-fab" aria-label="Yakınlaştır">
+          <button type="button" id="btn-zoom-in" title="Yakınlaştır">+</button>
+          <button type="button" id="btn-zoom-out" title="Uzaklaştır">−</button>
+        </div>
+      </div>
     </div>
   `;
 
@@ -120,7 +129,8 @@ export function mountMap(root) {
     attributionControl: true,
   }).setView([DEFAULT_MAP.lat, DEFAULT_MAP.lng], DEFAULT_MAP.zoom);
 
-  L.control.zoom({ position: 'bottomright' }).addTo(map);
+  root.querySelector('#btn-zoom-in').onclick = () => map.zoomIn();
+  root.querySelector('#btn-zoom-out').onclick = () => map.zoomOut();
 
   streetLayer = L.tileLayer(
     'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
@@ -321,6 +331,7 @@ export function mountMap(root) {
     root.querySelector('#btn-save-route').disabled = true;
   };
   root.querySelector('#btn-save-route').onclick = () => saveRoute();
+  root.querySelector('#btn-add-fence').onclick = () => addSafeZoneFromMap();
   root.querySelector('#map-child').onchange = (e) => {
     selectedChildId = e.target.value || null;
     renderMarkers();
@@ -328,9 +339,20 @@ export function mountMap(root) {
   };
 
   map.on('click', (ev) => {
-    if (!drawMode) return;
-    draftPoints.push({ latitude: ev.latlng.lat, longitude: ev.latlng.lng });
-    refreshDraft();
+    if (drawMode) {
+      draftPoints.push({ latitude: ev.latlng.lat, longitude: ev.latlng.lng });
+      refreshDraft();
+      return;
+    }
+    pendingFence = { lat: ev.latlng.lat, lng: ev.latlng.lng };
+    if (fencePreview) map.removeLayer(fencePreview);
+    fencePreview = L.circle([pendingFence.lat, pendingFence.lng], {
+      radius: 200,
+      color: '#2d6a4f',
+      fillOpacity: 0.12,
+      dashArray: '4 6',
+    }).addTo(map);
+    setStatus('Nokta seçildi — «+ Bölge» ile güvenli bölge ekle');
   });
 
   setTimeout(() => {
@@ -338,6 +360,43 @@ export function mountMap(root) {
     renderMarkers();
   }, 150);
   setTimeout(() => map.invalidateSize(), 500);
+}
+
+async function addSafeZoneFromMap() {
+  let center = pendingFence;
+  if (!center && selectedChildId) {
+    const m = locByChild.get(selectedChildId);
+    const lat = asNum(m?.latitude);
+    const lng = asNum(m?.longitude);
+    if (lat != null && lng != null) center = { lat, lng };
+  }
+  if (!center) {
+    toast('Haritaya tıkla veya konumlu çocuk seç', 'error');
+    return;
+  }
+  const name = prompt('Güvenli bölge adı', 'Ev')?.trim();
+  if (!name) return;
+  const radius = Number(prompt('Yarıçap (metre)', '200')) || 200;
+  try {
+    await ensureParentProfile(auth.currentUser);
+    await addDoc(collection(db, 'families', familyId(), 'geofences'), {
+      name,
+      centerLat: center.lat,
+      centerLng: center.lng,
+      radiusMeters: radius,
+      childIds: selectedChildId ? [selectedChildId] : [],
+      notifyOnEnter: true,
+      notifyOnExit: true,
+    });
+    toast('Güvenli bölge eklendi', 'success');
+    pendingFence = null;
+    if (fencePreview) {
+      map.removeLayer(fencePreview);
+      fencePreview = null;
+    }
+  } catch (e) {
+    toast(e.message || 'Eklenemedi', 'error');
+  }
 }
 
 function setStatus(text) {
@@ -551,6 +610,8 @@ export function unmountMap() {
   if (unsubRoutes) unsubRoutes();
   unsubFam = unsubLoc = unsubStatus = unsubRoutes = null;
   locByChild.clear();
+  pendingFence = null;
+  fencePreview = null;
   if (map) {
     map.remove();
     map = null;

@@ -9,22 +9,26 @@ import {
   deleteDoc,
   getDoc,
   ensureParentProfile,
+  tsToDate,
 } from '../firebase-app.js';
 import { DEFAULT_MAP } from '../config.js';
-import { t, toast, escapeHtml } from '../utils.js';
+import { t, toast, escapeHtml, fmtTime } from '../utils.js';
 
 let map;
-let layer;
+let fenceLayer;
+let markersLayer;
 let unsubFences;
 let unsubFam;
+let unsubLoc;
 let children = [];
+let activeChildIds = new Set();
 let pendingCenter = null;
 let circlePreview;
 let streetLayer;
 let hybridBase;
 let hybridLabels;
 let mapMode = localStorage.getItem('aileizi_map_mode') || 'hybrid';
-let editingId = null;
+const locByChild = new Map();
 
 function asNum(v) {
   if (typeof v === 'number' && Number.isFinite(v)) return v;
@@ -33,6 +37,18 @@ function asNum(v) {
     return Number.isFinite(n) ? n : null;
   }
   return null;
+}
+
+function childMarkerIcon(name, online) {
+  const initial = escapeHtml((name || '?').trim().charAt(0).toUpperCase() || '?');
+  const bg = online ? '#1b4332' : '#6b756f';
+  return L.divIcon({
+    className: 'child-marker',
+    html: `<div class="child-pin" style="--pin:${bg}"><span>${initial}</span><i></i></div>`,
+    iconSize: [40, 48],
+    iconAnchor: [20, 46],
+    popupAnchor: [0, -40],
+  });
 }
 
 function applyMapMode() {
@@ -51,17 +67,25 @@ function applyMapMode() {
 }
 
 export function mountGeofence(root) {
+  locByChild.clear();
   root.innerHTML = `
     <div class="view map-view">
       <div class="map-bar">
         <span style="font-weight:800;flex:1">Güvenli bölgeler</span>
         <div class="map-actions">
           <button class="btn btn-sm btn-outline" id="geo-map-type" type="button">Hibrit</button>
-          <button class="btn btn-sm btn-primary" id="geo-add" type="button">Ekle</button>
+          <button class="btn btn-sm btn-outline" id="geo-center" type="button">Ortala</button>
+          <button class="btn btn-sm btn-primary" id="geo-add" type="button">+ Bölge</button>
         </div>
       </div>
-      <div class="map-status" id="geo-status">Haritaya tıkla → merkez seç → Ekle</div>
-      <div id="geofence-map"></div>
+      <div class="map-status" id="geo-status">Haritaya tıkla → merkez seç → + Bölge</div>
+      <div class="map-stage">
+        <div id="geofence-map"></div>
+        <div class="map-zoom-fab">
+          <button type="button" id="geo-zoom-in">+</button>
+          <button type="button" id="geo-zoom-out">−</button>
+        </div>
+      </div>
       <div class="map-manage" id="geo-list"></div>
     </div>
   `;
@@ -70,7 +94,8 @@ export function mountGeofence(root) {
     [DEFAULT_MAP.lat, DEFAULT_MAP.lng],
     12,
   );
-  L.control.zoom({ position: 'bottomright' }).addTo(map);
+  root.querySelector('#geo-zoom-in').onclick = () => map.zoomIn();
+  root.querySelector('#geo-zoom-out').onclick = () => map.zoomOut();
 
   streetLayer = L.tileLayer(
     'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
@@ -85,7 +110,8 @@ export function mountGeofence(root) {
     { maxZoom: 19, opacity: 0.95 },
   );
   applyMapMode();
-  layer = L.layerGroup().addTo(map);
+  fenceLayer = L.layerGroup().addTo(map);
+  markersLayer = L.layerGroup().addTo(map);
 
   map.on('click', (ev) => {
     pendingCenter = { lat: ev.latlng.lat, lng: ev.latlng.lng };
@@ -96,7 +122,7 @@ export function mountGeofence(root) {
       fillOpacity: 0.15,
     }).addTo(map);
     document.getElementById('geo-status').textContent =
-      'Merkez seçildi — Ekle ile kaydet';
+      'Merkez seçildi — + Bölge ile kaydet';
   });
 
   const fid = auth.currentUser?.uid;
@@ -104,6 +130,7 @@ export function mountGeofence(root) {
 
   unsubFam = onSnapshot(doc(db, 'families', fid), async (fam) => {
     const ids = fam.data()?.childIds || [];
+    activeChildIds = new Set(ids);
     children = [];
     for (const id of ids) {
       try {
@@ -113,32 +140,47 @@ export function mountGeofence(root) {
         children.push({ uid: id, name: id.slice(0, 6) });
       }
     }
+    for (const id of [...locByChild.keys()]) {
+      if (!activeChildIds.has(id)) locByChild.delete(id);
+    }
+    renderChildMarkers();
+  });
+
+  unsubLoc = onSnapshot(collection(db, 'families', fid, 'locations'), (snap) => {
+    snap.forEach((d) => {
+      if (activeChildIds.size && !activeChildIds.has(d.id)) return;
+      locByChild.set(d.id, d.data() || {});
+    });
+    const keep = new Set(
+      snap.docs
+        .map((d) => d.id)
+        .filter((id) => !activeChildIds.size || activeChildIds.has(id)),
+    );
+    for (const id of [...locByChild.keys()]) {
+      if (!keep.has(id) || (activeChildIds.size && !activeChildIds.has(id))) {
+        locByChild.delete(id);
+      }
+    }
+    renderChildMarkers();
   });
 
   unsubFences = onSnapshot(collection(db, 'families', fid, 'geofences'), (snap) => {
-    layer.clearLayers();
+    fenceLayer.clearLayers();
     const list = [];
     snap.forEach((d) => list.push({ id: d.id, ...d.data() }));
     renderList(list);
-    const bounds = [];
     list.forEach((g) => {
       const lat = asNum(g.centerLat);
       const lng = asNum(g.centerLng);
       if (lat == null || lng == null) return;
-      const c = L.circle([lat, lng], {
+      L.circle([lat, lng], {
         radius: g.radiusMeters || 200,
         color: '#1b4332',
         fillOpacity: 0.12,
       })
         .bindPopup(escapeHtml(g.name || 'Bölge'))
-        .addTo(layer);
-      bounds.push(c.getBounds());
+        .addTo(fenceLayer);
     });
-    if (bounds.length) {
-      const b = bounds[0];
-      bounds.slice(1).forEach((x) => b.extend(x));
-      map.fitBounds(b.pad(0.2));
-    }
   });
 
   root.querySelector('#geo-map-type').onclick = () => {
@@ -146,8 +188,48 @@ export function mountGeofence(root) {
     localStorage.setItem('aileizi_map_mode', mapMode);
     applyMapMode();
   };
+  root.querySelector('#geo-center').onclick = () => fitAll();
   root.querySelector('#geo-add').onclick = () => createFence();
   setTimeout(() => map.invalidateSize(), 150);
+}
+
+function renderChildMarkers() {
+  if (!markersLayer) return;
+  markersLayer.clearLayers();
+  const pts = [];
+  for (const [id, m] of locByChild) {
+    if (activeChildIds.size && !activeChildIds.has(id)) continue;
+    const lat = asNum(m.latitude);
+    const lng = asNum(m.longitude);
+    if (lat == null || lng == null) continue;
+    if (m.hasLocation === false) continue;
+    if (lat === 0 && lng === 0 && m.hasLocation !== true) continue;
+    const child = children.find((c) => c.uid === id);
+    const name = child?.name || id.slice(0, 6);
+    L.marker([lat, lng], {
+      icon: childMarkerIcon(name, m.isOnline !== false),
+    })
+      .bindPopup(
+        `<strong>${escapeHtml(name)}</strong><br>${fmtTime(tsToDate(m.timestamp))}`,
+      )
+      .addTo(markersLayer);
+    pts.push([lat, lng]);
+  }
+  const st = document.getElementById('geo-status');
+  if (st && !pendingCenter) {
+    st.textContent = pts.length
+      ? `${pts.length} çocuk konumu · Haritaya tıkla → + Bölge`
+      : 'Haritaya tıkla → merkez seç → + Bölge';
+  }
+}
+
+function fitAll() {
+  const layers = [...markersLayer.getLayers(), ...fenceLayer.getLayers()];
+  if (!layers.length) {
+    toast('Gösterilecek konum yok');
+    return;
+  }
+  map.fitBounds(L.featureGroup(layers).getBounds().pad(0.2), { maxZoom: 16 });
 }
 
 function renderList(list) {
@@ -241,8 +323,6 @@ async function createFence() {
       map.removeLayer(circlePreview);
       circlePreview = null;
     }
-    document.getElementById('geo-status').textContent =
-      'Haritaya tıkla → merkez seç → Ekle';
   } catch (e) {
     toast(e.message, 'error');
   }
@@ -251,7 +331,9 @@ async function createFence() {
 export function unmountGeofence() {
   if (unsubFences) unsubFences();
   if (unsubFam) unsubFam();
-  unsubFences = unsubFam = null;
+  if (unsubLoc) unsubLoc();
+  unsubFences = unsubFam = unsubLoc = null;
+  locByChild.clear();
   if (map) {
     map.remove();
     map = null;

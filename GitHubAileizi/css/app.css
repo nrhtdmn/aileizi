@@ -888,9 +888,119 @@ a {
   background: var(--green-2);
 }
 
-.view.map-view #geofence-map {
+.map-stage {
+  position: relative;
   flex: 1;
-  min-height: 220px;
+  min-height: 240px;
+  display: flex;
+  flex-direction: column;
+}
+
+.map-stage #map,
+.map-stage #geofence-map {
+  flex: 1;
+  width: 100%;
+  min-height: 240px;
+}
+
+.map-zoom-fab {
+  position: absolute;
+  right: 12px;
+  bottom: 16px;
+  z-index: 500;
+  display: flex;
+  flex-direction: column;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.2);
+  background: #fff;
+}
+
+.map-zoom-fab button {
+  width: 44px;
+  height: 44px;
+  border: 0;
+  background: #fff;
+  font-size: 1.4rem;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--text);
+  border-bottom: 1px solid var(--line);
+}
+
+.map-zoom-fab button:last-child {
+  border-bottom: 0;
+}
+
+.map-zoom-fab button:active {
+  background: var(--green-soft);
+}
+
+.settings-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  text-align: left;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  font-weight: 750;
+  font-size: 0.95rem;
+}
+
+.menu-item .chev {
+  color: var(--muted);
+  font-size: 1.2rem;
+}
+
+.settings-panel {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 14px;
+}
+
+.settings-panel h3 {
+  margin: 8px 0 10px;
+}
+
+.link-back {
+  border: 0;
+  background: none;
+  color: var(--green-2);
+  font-weight: 800;
+  padding: 0;
+  margin-bottom: 4px;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(20, 35, 27, 0.45);
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+}
+
+.modal-card {
+  width: min(400px, 100%);
+  background: #fff;
+  border-radius: 16px;
+  padding: 18px 16px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.2);
+}
+
+.modal-card h3 {
+  margin: 0 0 12px;
 }
 
 .invite-code {

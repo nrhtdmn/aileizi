@@ -26,6 +26,7 @@ import { t, setLang, getLang, fmtTime, toast, escapeHtml } from '../utils.js';
 import { getAlertPrefs, setAlertPrefs } from '../alerts.js';
 
 let unsubs = [];
+let childrenCache = [];
 
 export function mountSettings(root) {
   const user = auth.currentUser;
@@ -45,9 +46,28 @@ export function mountSettings(root) {
         </div>
       </div>
 
-      <div class="row section">
+      <div class="settings-menu">
+        <button type="button" class="menu-item" data-panel="notify">
+          <span>Anlık bildirimler</span><span class="chev">›</span>
+        </button>
+        <button type="button" class="menu-item" data-panel="invite">
+          <span>Davet kodu</span><span class="chev">›</span>
+        </button>
+        <button type="button" class="menu-item" data-panel="family">
+          <span>Aile · çocuklar &amp; sağlık</span><span class="chev">›</span>
+        </button>
+        <button type="button" class="menu-item" data-panel="tips">
+          <span>İpuçları</span><span class="chev">›</span>
+        </button>
+        <button type="button" class="menu-item" id="btn-open-pw">
+          <span>Şifre değiştir</span><span class="chev">›</span>
+        </button>
+      </div>
+
+      <div class="settings-panel hidden" id="panel-notify">
+        <button type="button" class="link-back" data-back>← Geri</button>
         <h3>Anlık bildirimler</h3>
-        <p class="meta" style="margin:4px 0 10px">SOS, mesaj, bölge ve rota uyarıları. Tarayıcı izni gerekir.</p>
+        <p class="meta" style="margin:4px 0 10px">Tarayıcı izni gerekir; sekme açıkken anında gelir.</p>
         <label class="check-row"><input type="checkbox" id="pref-sos" ${prefs.sos ? 'checked' : ''}/> SOS</label>
         <label class="check-row"><input type="checkbox" id="pref-chat" ${prefs.chat ? 'checked' : ''}/> Mesajlar</label>
         <label class="check-row"><input type="checkbox" id="pref-geo" ${prefs.geofence ? 'checked' : ''}/> Bölge giriş/çıkış</label>
@@ -57,7 +77,8 @@ export function mountSettings(root) {
         <button class="btn btn-primary" id="btn-notif" type="button" style="margin-top:10px">Bildirim izni iste</button>
       </div>
 
-      <div class="row section">
+      <div class="settings-panel hidden" id="panel-invite">
+        <button type="button" class="link-back" data-back>← Geri</button>
         <h3>Davet kodu</h3>
         <p class="meta" style="margin:4px 0 10px">6 haneli kod, 24 saat geçerli.</p>
         <button class="btn btn-primary" id="btn-invite" type="button">${t('invite')}</button>
@@ -65,35 +86,54 @@ export function mountSettings(root) {
         <div class="list" id="active-invites"></div>
       </div>
 
-      <div class="row section">
-        <h3>${t('children')}</h3>
+      <div class="settings-panel hidden" id="panel-family">
+        <button type="button" class="link-back" data-back>← Geri</button>
+        <h3>Bağlı çocuklar</h3>
         <div class="list" id="settings-children" style="margin-top:8px"></div>
-      </div>
-
-      <div class="row section" id="health-panel">
-        <h3>Sağlık özeti</h3>
-        <p class="meta" style="margin:4px 0 8px">Son görülme ve konum paylaşımı durumu.</p>
+        <h3 style="margin-top:18px">Sağlık özeti</h3>
+        <p class="meta" style="margin:4px 0 8px">Son görülme, pil ve konum paylaşımı.</p>
         <div class="list" id="health-list"><div class="empty">Yükleniyor…</div></div>
       </div>
 
-      <div class="row section">
+      <div class="settings-panel hidden" id="panel-tips">
+        <button type="button" class="link-back" data-back>← Geri</button>
         <h3>İpuçları</h3>
         <ul class="tips">
           <li>Çocuk uygulamasını arka planda açık tut — konum ve SOS için.</li>
-          <li>Ev / okul için güvenli bölge ekle; Ayar’dan giriş-çıkış bildirimini aç.</li>
+          <li>Harita’da noktaya tıkla → «+ Bölge» ile güvenli alan ekle.</li>
           <li>Okul yolu için rota çiz; sapma eşiğini Rotalar’dan ayarla.</li>
           <li>Bu sekmeyi açık bırakırsan bildirimler anında gelir.</li>
         </ul>
       </div>
+    </div>
 
-      <div class="row section">
-        <h3>Şifre</h3>
-        <div class="field"><label>Mevcut</label><input type="password" id="pw-cur" /></div>
-        <div class="field"><label>Yeni</label><input type="password" id="pw-new" /></div>
-        <button class="btn btn-outline" id="pw-save" type="button" style="width:100%">Güncelle</button>
+    <div class="modal-backdrop hidden" id="pw-modal">
+      <div class="modal-card" role="dialog" aria-labelledby="pw-title">
+        <h3 id="pw-title">Şifre değiştir</h3>
+        <div class="field"><label>Mevcut şifre</label><input type="password" id="pw-cur" /></div>
+        <div class="field"><label>Yeni şifre</label><input type="password" id="pw-new" /></div>
+        <div class="row-actions" style="margin-top:8px">
+          <button class="btn btn-outline" id="pw-cancel" type="button">İptal</button>
+          <button class="btn btn-primary" id="pw-save" type="button" style="width:auto">Kaydet</button>
+        </div>
       </div>
     </div>
   `;
+
+  const menu = root.querySelector('.settings-menu');
+  const showPanel = (id) => {
+    menu.classList.add('hidden');
+    root.querySelectorAll('.settings-panel').forEach((p) => p.classList.add('hidden'));
+    if (id) root.querySelector(`#panel-${id}`)?.classList.remove('hidden');
+    else menu.classList.remove('hidden');
+  };
+
+  root.querySelectorAll('.menu-item[data-panel]').forEach((b) => {
+    b.onclick = () => showPanel(b.dataset.panel);
+  });
+  root.querySelectorAll('[data-back]').forEach((b) => {
+    b.onclick = () => showPanel(null);
+  });
 
   const bindPref = (id, key) => {
     root.querySelector(id).onchange = (e) => {
@@ -123,6 +163,17 @@ export function mountSettings(root) {
     }
   };
 
+  const modal = root.querySelector('#pw-modal');
+  root.querySelector('#btn-open-pw').onclick = () => modal.classList.remove('hidden');
+  root.querySelector('#pw-cancel').onclick = () => modal.classList.add('hidden');
+  modal.onclick = (e) => {
+    if (e.target === modal) modal.classList.add('hidden');
+  };
+  root.querySelector('#pw-save').onclick = async () => {
+    await changePw();
+    modal.classList.add('hidden');
+  };
+
   root.querySelector('#lang-tr').onclick = () => {
     setLang('tr');
     location.reload();
@@ -135,7 +186,6 @@ export function mountSettings(root) {
     await signOut(auth);
   };
   root.querySelector('#btn-invite').onclick = () => createInvite();
-  root.querySelector('#pw-save').onclick = () => changePw();
 
   const fid = user.uid;
   const u1 = onSnapshot(doc(db, 'families', fid), async (fam) => {
@@ -153,6 +203,7 @@ export function mountSettings(root) {
         list.push({ uid: id, name: id.slice(0, 6), sharing: true });
       }
     }
+    childrenCache = list;
     renderChildren(list);
     renderHealth(fid, list);
   });
@@ -359,6 +410,8 @@ async function changePw() {
     await reauthenticateWithCredential(user, cred);
     await updatePassword(user, neu);
     toast('Şifre güncellendi', 'success');
+    document.getElementById('pw-cur').value = '';
+    document.getElementById('pw-new').value = '';
   } catch (e) {
     toast(describeError(e), 'error');
   }
